@@ -149,8 +149,10 @@ function draw(g::Geometry, ::Val{:line})::Nothing
 end
 
 function draw(g::Geometry, ::Val{:line3d})::Nothing
-    GR.uselinespec(g.spec)
-    GR.polyline3d(g.x, g.y, g.z)
+    mask = GR.uselinespec(g.spec)
+    hasline(mask) && GR.polyline3d(g.x, g.y, g.z)
+    hasmarker(mask) && GR.polymarker3d(g.x, g.y, g.z)
+    return nothing
 end
 
 function draw(g::Geometry, ::Val{:stair})::Nothing
@@ -200,12 +202,13 @@ function draw(g::Geometry, ::Val{:stair})::Nothing
 end
 
 function draw(g::Geometry, ::Val{:stem})::Nothing
+    baseline = Float64(get(g.attributes, :baseline, 0.0))
     GR.setlinecolorind(1)
-    GR.polyline([minimum(g.x), maximum(g.x)], [0.0, 0.0])
+    GR.polyline([minimum(g.x), maximum(g.x)], [baseline, baseline])
     GR.setmarkertype(GR.MARKERTYPE_SOLID_CIRCLE)
     GR.uselinespec(g.spec)
     for i = 1:length(g.y)
-        GR.polyline([g.x[i], g.x[i]], [0.0, g.y[i]])
+        GR.polyline([g.x[i], g.x[i]], [baseline, g.y[i]])
         GR.polymarker([g.x[i]], [g.y[i]])
     end
 end
@@ -270,13 +273,15 @@ function draw(g::Geometry, ::Val{:bar})::Nothing
 end
 
 function draw(g::Geometry, ::Val{:polarline})::Nothing
-    GR.uselinespec(g.spec)
+    mask = GR.uselinespec(g.spec)
     ymin, ymax = extrema(g.y)
     ρ = (g.y .- ymin) ./ (ymax .- ymin)
     n = length(ρ)
     x = ρ .* cos.(g.x)
     y = ρ .* sin.(g.x)
-    GR.polyline(x, y)
+    hasline(mask) && GR.polyline(x, y)
+    hasmarker(mask) && GR.polymarker(x, y)
+    return nothing
 end
 
 function draw(g::Geometry, ::Val{:polarbar})::Nothing
@@ -380,4 +385,31 @@ function draw(g::Geometry, ::Val{:isosurf})::Nothing
     GR.gr3.drawimage(vp..., 500, 500, GR.gr3.DRAWABLE_GKS)
     GR.gr3.deletemesh(mesh)
     GR.selntran(1)
+end
+
+function hasnan(a)
+    for el in a
+        if el === NaN || el === missing
+            return true
+        end
+    end
+    false
+end
+
+function draw(g::Geometry, ::Val{:shade})::Nothing
+    xform = Int(get(g.attributes, :xform, 5))
+    if hasnan(g.x)
+        GR.shadelines(g.x, g.y, xform=xform)
+    else
+        GR.shadepoints(g.x, g.y, xform=xform)
+    end
+end
+
+function draw(g::Geometry, ::Val{:volume})::Vector{Float64}
+    algorithm = Int(get(g.attributes, :algorithm, 0))
+    GR.gr3.clear()
+    dims = (Int(g.x[1]), Int(g.y[1]), Int(g.z[1]))
+    v = reshape(g.c, dims)
+    dmin, dmax = GR.gr3.volume(v, algorithm)
+    [dmin, dmax]
 end

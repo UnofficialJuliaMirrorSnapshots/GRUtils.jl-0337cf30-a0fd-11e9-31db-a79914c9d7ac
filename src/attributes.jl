@@ -1,5 +1,5 @@
 # Legend
-function legend!(p::PlotObject, args...; location=1)
+function legend!(p::PlotObject, args...; location=1, kwargs...)
     # Reset main viewport if there was a legend
     if haskey(p.attributes, :location) && p.attributes[:location] ∈ LEGEND_LOCATIONS[:right_out]
         p.viewport.inner[2] += p.legend.size[1]
@@ -7,7 +7,8 @@ function legend!(p::PlotObject, args...; location=1)
     for i = 1:min(length(args), length(p.geoms))
         p.geoms[i] = Geometry(p.geoms[i], label=args[i])
     end
-    p.legend = Legend(p.geoms)
+    maxrows = Int(get(kwargs, :maxrows, length(p.geoms)))
+    p.legend = Legend(p.geoms, maxrows)
     # Redefine viewport if legend is set outside
     if p.legend.size ≠ NULLPAIR && location ∈ LEGEND_LOCATIONS[:right_out]
         p.viewport.inner[2] -= p.legend.size[1]
@@ -26,6 +27,13 @@ certain characters, e.g. parentheses. For more information see the
 documentation of GR.textext.
 
 :param args: The legend strings
+
+In addition to the legend strings you can give the keyword arguments
+``location`` to define the location of the legend with
+respect to the plot axes (as a number, following the convention of
+[Matplotlib legends](https://matplotlib.org/3.1.1/api/_as_gen/matplotlib.pyplot.legend.html)),
+and ``maxrows`` to distribute the legend labels in a grid with a
+maximum number of rows.
 
 **Usage examples:**
 
@@ -408,8 +416,59 @@ Set the aspect ratio of the plot
     julia> aspectratio(16/9) # Panoramic ratio
 """
 function aspectratio(r)
-    f = gcf()    
+    f = gcf()
     aspectratio!(currentplot(f), r)
     draw(f)
 end
 
+# Pan and zoom
+
+function panzoom!(p::PlotObject, x, y, r = 0.0)
+    GR.savestate()
+    GR.setviewport(p.viewport.inner...)
+    GR.setwindow(p.axes.ranges[:x]..., p.axes.ranges[:y]...)
+    xmin, xmax, ymin, ymax = GR.panzoom(x, y, r)
+    GR.restorestate()
+    xlim!(p, (xmin, xmax))
+    ylim!(p, (ymin, ymax))
+    return nothing
+end
+
+panzoom!(f::Figure, args...) = panzoom!(currentplot(f), args...)
+
+"""
+Pan/zoom the axes
+
+:param x, y: distance between axes center and focus of the zoom in NDC
+:param r: relative size of the zoomed area (0 or omit to pan without zoom)
+
+**Usage examples:**
+
+.. code-block:: julia
+
+    julia> # Move the center 1 unit right and 0.2 up
+    julia> panzoom(1, 0.2)
+    julia> # Reduce the focus of the axes to half their size
+    julia> # focusing on the previous point
+    julia> panzoom(1, 0.2, 0.5)
+"""
+function panzoom(args...)
+    f = gcf()
+    panzoom!(currentplot(f), args...)
+    draw(f)
+end
+
+"""
+Zoom on the axes
+
+:param zoom: relative size of the zoomed area
+
+**Usage examples:**
+
+.. code-block:: julia
+
+    julia> # Reduce the focus of the axes to half their size
+    julia> zoom(0.5)
+"""
+zoom(r) = panzoom(0.0, 0.0, r)
+zoom!(pf, r) = panzoom!(pf, 0.0, 0.0, r)
