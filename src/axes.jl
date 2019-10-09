@@ -3,49 +3,42 @@ const AxisRange = Tuple{Float64, Float64}
 const AxisTickData  = Tuple{Float64, Tuple{Float64,Float64}, Int}
 
 """
-    Axes(kind::Symbol [; kwargs...])
+    Axes(kind, ranges, tickdata, ticklabels, perspective, camera, options)
 
-`Axes` is a type of objects that contain the graphical specifications of the
+Return an `Axes` object, containing the graphical specifications of the
 coordinate system of a plot.
 
-`Axes` are determined by their `kind`, which may be `:axes2d` for 2-D plots,
-`:axes3d` for 3-D plots, and `:polar` for polar plots. The rest of its fields
-can be passed to the `Axes` constructor as keyword arguments (and they are set
-to "empty" or "null" values if not given). Those fields are:
+Axes are determined by their `kind`, which may be `:axes2d` for 2-D plots,
+`:axes3d` for 3-D plots, and `:polar` for polar plots. The rest of its fields are:
 
-* `ranges`: boundaries of the different axes/scales. They are given as a dictionary
-    whose keys are `Symbol`s with the name of the axis (`:x`, `:y`, `:z`, `:c`),
-    and whose values are tuples with two float values &mdash;
-    the minimum and maximum values, respectively.
-    The range `(Inf, -Inf)` describes an undefined axis.
-* `tickdata`: numeric specifications of the "ticks" that are drawn on the axes.
+* **`ranges`**: boundaries of the different axes/scales. They are given as a dictionary
+    whose keys are symbols with the name of the axis (`:x`, `:y`, `:z`, `:c`),
+    and whose values are tuples with two float values — the minimum and maximum
+    values, respectively. The range `(Inf, -Inf)` describes an undefined axis.
+* **`tickdata`**: numeric specifications of the "ticks" that are drawn on the axes.
     They are given as a dictionary whose keys are the names of the axis (as for `range`),
-    and whose values are tuples that contain for that axis: (1) the "minor" value
-    between consecutive ticks; (2) a tuple with the two ends of the axis ticks; and
-    (3) the number of minor ticks between "major", numbered ticks.
-* `ticklabels`: transformations between tick values and labels. They are given
+    and whose values are tuples that contain for that axis: (1) a `Float64` with
+    the "minor" value between consecutive ticks; (2) a 2-tuple of `Float64` with
+    the ends of the axis ticks; and (3) an `Int` with the number of minor ticks
+    between "major", numbered ticks.
+* **`ticklabels`**: transformations between tick values and labels. They are given
     as a dictionary whose keys are the names of the axis, and whose values are
-    functions that accept a number as argument, and return a `String` with the
+    functions that accept a number as argument, and return a string with the
     text that must be written at major ticks. (This only works for the X and Y axes).
-* `perspective`: A `Vector{Int}` that contains the "rotation" and "tilt" angles
+* **`perspective`**: A `Vector{Int}` that contains the "rotation" and "tilt" angles
     that are used to project 3-D axes on the plot plane. (Only for 3-D plots)
-* `camera`: A `Vector{Float64}` with the camera parameters. (Only used for 3-D plots)
-* `options`: A `Dict{Symbol, Int}` with extra options that control the visualization
+* **`camera`**: A `Vector{Float64}` with the camera parameters (camera position,
+    view center and "up" vector, only used for 3-D plots).
+* **`options`**: A `Dict{Symbol, Int}` with extra options that control the visualization
     of the axes. Currently supported options are:
     + `options[:scale]`, an integer code that defines what axes are must be
-        plotted in log scale or reversed (cf. [`GR.setscale`](@ref)).
+        plotted in log scale or reversed (cf. the function `GR.setscale`).
     + `options[:grid] = 0` to hide the plot grid, or any other value to show it.
     + `options[:tickdir]` to determine how the ticks are drawn
         (positive value to draw them inside the plot area, negative value to
         draw them outside, or `0` to hide them).
-    + `options[:gr3] = 0` to identify if the axes are a 3-D scene defined for the `gr3` interface.
-
-### Alternative constructor
-
-    Axes(kind, geoms::Array{<:Geometry} [; kwargs...]) where kind
-
-An `Axes` object can also be made by defining the `kind` of the axe, and a vector of [`Geometry`](@ref)
-objects that are used to calculate the different axis limits, ticks, etc.
+    + `options[:gr3] ≠ 0` to identify if the axes are a 3-D scene defined for the `gr3` interface.
+    + `options[:radians] = 0` to transform angular values to degrees in polar axes.
 """
 struct Axes
     kind::Symbol
@@ -57,6 +50,15 @@ struct Axes
     options::Dict{Symbol, Int}
 end
 
+"""
+    Axes(kind::Symbol [; kwargs...])
+
+Return an `Axes` object with selected parameters given by keyword arguments.
+
+This constructor only requires the `kind` of the axes (`:axes2d`, `:axes3d` or
+`:axespolar`), such that all the other parameters are passed as keyword arguments.
+Null or empty values are used by default for the parameters that are not given.
+"""
 Axes(kind::Symbol; ranges = Dict{Symbol, AxisRange}(),
     tickdata = Dict{Symbol, AxisTickData}(),
     ticklabels = Dict{Symbol, Function}(),
@@ -65,6 +67,14 @@ Axes(kind::Symbol; ranges = Dict{Symbol, AxisRange}(),
     options = Dict{Symbol, Int}()) =
     Axes(kind, ranges, tickdata, ticklabels, perspective, camera, options)
 
+"""
+    Axes(kind, geoms::Array{<:Geometry} [; kwargs...]) where kind
+
+Return an `Axes` object defined by the `kind` of the axes, and a vector of
+[`Geometry`](@ref) objects that are meant to be plotted inside the axes, which
+are used to calculate the different axis limits, ticks, etc.
+Keyword arguments are used to override the default calculations.
+"""
 function Axes(kind, geoms::Array{<:Geometry}; grid=1, kwargs...)
     # Set limits based on data
     ranges = minmax(geoms)
@@ -92,6 +102,9 @@ function Axes(kind, geoms::Array{<:Geometry}; grid=1, kwargs...)
     elseif kind == :polar
         tickdata = set_ticks(ranges, 2, (:x, :y); kwargs..., xlog=false, ylog=false, xflip=false, yflip=false)
         options[:grid] = Int(grid)
+        if !get(kwargs, :radians, true)
+            options[:radians] = 0
+        end
     elseif kind == :camera # Not defined
         tickdata = Dict{Symbol, AxisTickData}()
     end
@@ -374,10 +387,10 @@ function draw_polaraxes(ax)
     _, charheight = _tickcharheight()
     GR.setcharheight(charheight)
     GR.setlinetype(GR.LINETYPE_SOLID)
-    rmin, rmax = ax.ranges[:y]
-    tick = 0.5 * GR.tick(rmin, rmax)
+    rmax = maximum(abs.(ax.ranges[:y]))
+    tick = 0.5 * GR.tick(0.0, rmax)
     # Draw the arcs and radii
-    n = round(Int, (rmax - rmin) / tick + 0.5)
+    n = round(Int, rmax / tick + 0.5)
     for i in 0:n
         r = float(i) / n
         if i % 2 == 0
@@ -387,21 +400,26 @@ function draw_polaraxes(ax)
             end
             GR.settextalign(GR.TEXT_HALIGN_LEFT, GR.TEXT_VALIGN_HALF)
             x, y = GR.wctondc(0.05, r)
-            rounded = round(rmin + i * tick, sigdigits = 12, base = 10)
+            rounded = round(i * tick, sigdigits = 12, base = 10)
             GR.text(x, y, string(rounded))
         else
             GR.setlinecolorind(90)
             GR.drawarc(-r, r, -r, r, 0, 359)
         end
     end
-    for alpha in 0:45:315
-        a = alpha + 90
-        sinf = sin(a * π / 180)
-        cosf = cos(a * π / 180)
-        GR.polyline([sinf, 0], [cosf, 0])
+    if get(ax.options, :radians, 1) == 0
+        labels = (("$θ^o" for θ in 0:45:315)...,)
+    else
+        labels = ("0", "\\pi/4", "\\pi/2", "(3/4)\\pi",
+            "\\pi", "(5/4)\\pi", "(3/2)\\pi", "(7/4)\\pi")
+    end
+    for i = 0:7
+        sinf = sin(i * 0.25π)
+        cosf = cos(i * 0.25π)
+        GR.polyline([cosf, 0], [sinf, 0])
         GR.settextalign(GR.TEXT_HALIGN_CENTER, GR.TEXT_VALIGN_HALF)
-        x, y = GR.wctondc(1.1 * sinf, 1.1 * cosf)
-        GR.textext(x, y, string(alpha, "^o"))
+        x, y = GR.wctondc(1.1 * cosf, 1.1 * sinf)
+        GR.textext(x, y, labels[i + 1])
     end
     GR.restorestate()
     return nothing

@@ -1,6 +1,6 @@
 ## Select keyword arguments from lists
-const KEYS_GEOM_ATTRIBUTES = [:accelerate, :algorithm, :alpha, :baseline, :clabels, :label, :linewidth, :markersize, :spec, :stair_position, :xform]
-const KEYS_PLOT_ATTRIBUTES = [:backgroundcolor, :colorbar, :colormap, :location, :hold, :overlay_axes, :ratio, :scheme, :subplot, :title,
+const KEYS_GEOM_ATTRIBUTES = [:accelerate, :algorithm, :alpha, :baseline, :clabels, :label, :linewidth, :markersize, :shadelines, :spec, :stair_position, :xform]
+const KEYS_PLOT_ATTRIBUTES = [:backgroundcolor, :colorbar, :colormap, :location, :hold, :overlay_axes, :radians, :ratio, :scheme, :subplot, :title,
     :xflip, :xlabel, :xlim, :xlog, :xticklabels, :yflip, :ylabel, :ylim, :ylog, :yticklabels, :zflip, :zlabel, :zlim, :zlog]
 
 geom_attributes(; kwargs...) = filter(p -> p.first ∈ KEYS_GEOM_ATTRIBUTES, kwargs)
@@ -19,32 +19,24 @@ functions:
 
 The first of those functions (the one whose name ends with an exclamation)
 edits the figure given as first argument, replacing its last plot by a new
-one using the positional arguments `args` and the keyword arguments `kwargs`.
-The creation of such a plot is determined by the additional options given
-to the macro.
+one. The second function (the one without exclamation) creates the plot in the
+current figure. How those functions work depends on the options that are passed
+after the function name to the macro. Those options are expressed in the fashion
+of keyword argments, i.e. as `key = value`, and they can be the following:
 
-The second function (the one without exclamation) creates the plot in the
-current figure &mdash; see [`gcf`](@ref).
-
-### Options
-
-The options are expressed in the fashion of keyword argments, i.e. as
-`key = value`. The possible options are:
-
-* `geom`: a `Symbol` with the name of the kind of the `Geometry` that is created.
-* `axes`: a `Symbol` with the name of the kind of the `Axes` that are created.
-* `plotkind`: a `Symbol` with the name of the plot kind (only needed as meta-data).
+* **`geom`**: a `Symbol` with the name of the kind of the `Geometry` that is created.
+* **`axes`**: a `Symbol` with the name of the kind of the `Axes` that are created.
+* **`plotkind`**: a `Symbol` with the name of the plot kind (only needed as meta-data).
     If this option is not given, the name of the function is used by default.
-* `setargs`: a function that takes the positional and keyword arguments that are
+* **`setargs`**: a function that takes the positional and keyword arguments that are
     passed to the functions, and returns: (a) a tuple of positional arguments
-    to be passed to the geometry constructor (see [`geometries`](@ref)), and
+    to be passed to the function [`geometries`](@ref)), and
     (b) the set of keyword arguments that are passed to the constructor of
-    geometries, axes (see [`Axes`](@ref)), and the plot object
-    (see [`PlotObject`](@ref)). If `setargs` is not defined, the positional and
-    keyword arguments are returned untransformed.
-* `kwargs`: a named tuple with extra keyword arguments that are passed to
+    geometries, axes, and the plot object. If `setargs` is not defined, the
+    positional and keyword arguments are returned untransformed.
+* **`kwargs`**: a named tuple with extra keyword arguments that are passed to
     the constructors of geometries, axes and the plot object.
-* `docstring`: the documentation string of the functions.
+* **`docstring`**: the documentation string that will be assigned to the plotting function.
 """
 macro plotfunction(fname, options...)
     # Parse options - minimum geom and axes
@@ -88,7 +80,7 @@ macro plotfunction(fname, options...)
                 geoms = GRUtils.geometries(Symbol($geom_k), args...; GRUtils.geom_attributes(;kwargs...)...)
             end
             axes = GRUtils.Axes(Symbol($axes_k), geoms; kwargs...)
-            f.plots[end] = GRUtils.PlotObject(axes, geoms; kind=$plotkind, GRUtils.plot_attributes(; kwargs...)...)
+            GRUtils.makeplot!(f.plots[end], axes, geoms; kind=$plotkind, GRUtils.plot_attributes(; kwargs...)...)
             GRUtils.draw(f)
         end
         $fname(args...; kwargs...) = $fname!(GRUtils.gcf(), args...; kwargs...)
@@ -109,30 +101,37 @@ function _setargs_line(f, args...; kwargs...)
 end
 
 @plotfunction(plot, geom = :line, axes = :axes2d, setargs=_setargs_line, kind = :line, docstring="""
+    plot(x[, y, spec; kwargs...])
+    plot(x1, y1, x2, y2...; kwargs...)
+    plot(x1, y1, spec1...; kwargs...)
+
 Draw one or more line plots.
 
-This function can receive one or more of the following:
+Lines are defined by the `x` and `y` coordinates of the connected points, given as
+numeric vectors, and optionally the format string `spec` that defines the line
+and marker style and color as in
+[matplotlib](https://matplotlib.org/3.1.1/api/_as_gen/matplotlib.pyplot.plot.html).
 
-- x values and y values, or
-- x values and a callable to determine y values, or
-- y values only, with their indices as x values
+The `y` vector can be replaced by a callable that defines the Y coordinates as a
+function of the X coordinates.
 
-:param args: the data to plot
+Multiple lines can be defined by pairs of `x` and `y` coordinates (and optionally
+their format strings), passed sequentially as arguments of `plot`.
+Alternatively, if various lines have the same X coordinates, their Y values can
+be grouped as columns in a matrix.
 
-**Usage examples:**
+If no `specs` are given, the series will be plotted as solid lines with a
+predefined sequence of colors.
 
-.. code-block:: julia-repl
+This function can receive a single numeric vector or matrix, which will be
+interpreted as the Y coordinates; in such case the X coordinates will be a
+sequence of integers starting at 1.
 
-    julia> # Create example data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = 2 .* x .+ 4
-    julia> # Plot x and y
-    julia> plot(x, y)
-    julia> # Plot x and a callable
-    julia> plot(x, t -> t^3 + t^2 + t)
-    julia> # Plot y, using its indices for the x values
-    julia> plot(y)
+# Examples
 
+```julia
+$(_example("plot"))
+```
 """)
 
 function _setargs_stair(f, args...; kwargs...)
@@ -150,65 +149,88 @@ function _setargs_stair(f, args...; kwargs...)
 end
 
 @plotfunction(stair, geom = :stair, axes = :axes2d, setargs=_setargs_stair, docstring="""
+    stair(x[, y, spec; kwargs...])
+    stair(x1, y1, x2, y2...; kwargs...)
+    stair(x1, y1, spec1...; kwargs...)
+
 Draw one or more staircase or step plots.
 
-This function can receive one or more of the following:
+The coordinates and format of the stair outlines are defined as for line plots
+(cf. [`plot`](@ref)).
 
-- x values and y values, or
-- x values and a callable to determine y values, or
-- y values only, with their indices as x values
+Additionally, the keyword argument `where` can be used to define where the "stairs"
+(vertical discontinuities between Y values) shoud be placed:
 
-:param args: the data to plot
-:param where: pre, mid or post, to decide where the stair between two y values should be placed
+* `where = "pre"` to make the steps stop at each point (`x[i]`, `y[i]`),
+    starting at the previous `x` coordinate except for the first point.
+* `where = "post"` to make the steps start at each point (`x[i]`, `y[i]`),
+    stopping at the next `x` coordinate except for the last point.
+* `where = "mid"` (default) to make the steps go through each point (`x[i]`, `y[i]`)
+    starting and ending in the middle of the surrounding x-intervals,
+    except for the first and last points.
 
-**Usage examples:**
+# Examples
 
-.. code-block:: julia
-    julia> # Create example data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = 2 .* x .+ 4
-    julia> # Plot x and y
-    julia> stair(x, y)
-    julia> # Plot x and a callable
-    julia> stair(x, x -> x^3 + x^2 + x)
-    julia> # Plot y, using its indices for the x values
-    julia> stair(y)
-    julia> # Use next y step directly after x each position
-    julia> stair(y, where="pre")
-    julia> # Use next y step between two x positions
-    julia> stair(y, where="mid")
-    julia> # Use next y step immediately before next x position
-    julia> stair(y, where="post")
+```julia
+$(_example("stair"))
+```
 """)
 
 @plotfunction(stem, geom = :stem, axes = :axes2d, setargs=_setargs_line, docstring="""
-Draw a stem plot.
+    stem(x[, y, spec; kwargs...])
+    stem(x1, y1, x2, y2...; kwargs...)
+    stem(x1, y1, spec1...; kwargs...)
 
-This function can receive one or more of the following:
+Draw a stem plot
 
-- x values and y values, or
-- x values and a callable to determine y values, or
-- y values only, with their indices as x values
+The coordinates and format of the stems and markers are defined as for line plots
+(cf. [`plot`](@ref)).
 
-:param args: the data to plot
+Additionally, the keyword argument `baseline` can be used to define the
+Y coordinate where stems should start from.
 
-**Usage examples:**
+# Examples
 
-.. code-block:: julia
+```julia
+$(_example("stem"))
+```
+""")
 
-    julia> # Create example data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = 0.2 .* x .+ 0.4
-    julia> # Plot x and y
-    julia> stem(x, y)
-    julia> # Plot x and a callable
-    julia> stem(x, x -> x^3 + x^2 + x + 6)
-    julia> # Plot y, using its indices for the x values
-    julia> stem(y)
+function _setargs_polar(f, x, y, args...; kwargs...)
+    if !get(kwargs, :radians, true)
+        x = collect(x) .* (π/180)
+    end
+    _setargs_line(f, x, y, args...; kwargs...)
+end
+
+@plotfunction(polar, geom = :polarline, axes = :polar, setargs=_setargs_polar,
+kwargs = (ratio=1.0,), docstring="""
+    polar(angle, radius[, spec; kwargs...])
+
+Draw one or more polar plots.
+
+The first coordinate the represents the angle, and the second the
+radius of the line points. The rest is defined as for line plots,
+except that the first variable (`angle`) is always required.
+(cf. [`plot`](@ref)).
+
+The first variable is by default considered to be radians, and the angular
+labels of the grid are shown as factors of π. Use the keyword argument
+`radians = false` to pass and show angles in degrees.
+
+!!! note
+
+    Logarithmic and reversed scales ar disabled in polar plots
+
+# Examples
+
+```julia
+$(_example("polar"))
+```
 """)
 
 # Recursive call in case of multiple x-y pairs
-for fun = [:plot!, :stair!, :stem!]
+for fun = [:plot!, :stair!, :stem!, :polar!]
     @eval function $fun(f::Figure, x, y, u, v, args...; kwargs...)
         holdstate = get(currentplot(f).attributes, :hold, false)
         if typeof(u) <: AbstractString
@@ -227,40 +249,27 @@ end
 
 @plotfunction(scatter, geom = :scatter, axes = :axes2d, kwargs=(colorbar=true,),
 docstring="""
-Draw one or more scatter plots.
+    scatter(x[, y, size, color; kwargs...])
 
-This function can receive one or more of the following:
+Draw a scatter plot.
 
-- x values and y values, or
-- x values and a callable to determine y values, or
-- y values only, with their indices as x values
+Points are defined by their `x` and `y` coordinates, given as numeric vectors.
+Additionally, values for markers' `size` and `color` can be provided
+Size values will determine the marker size in percent of the regular size,
+and color values will be used in combination with the current colormap.
 
-Additional to x and y values, you can provide values for the markers'
-size and color. Size values will determine the marker size in percent of
-the regular size, and color values will be used in combination with the
-current colormap.
+The last variable can be replaced by a callable that defines it as a
+function of the previous variables.
 
-:param args: the data to plot
+This function can receive a single numeric vector or matrix, which will be
+interpreted as the Y coordinates; in such case the X coordinates will be a
+sequence of integers starting at 1.
 
-**Usage examples:**
+# Examples
 
-.. code-block:: julia
-
-    julia> # Create example data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = 0.2 .* x .+ 0.4
-    julia> # Plot x and y
-    julia> scatter(x, y)
-    julia> # Plot x and a callable
-    julia> scatter(x, x -> 0.2 * x + 0.4)
-    julia> # Plot y, using its indices for the x values
-    julia> scatter(y)
-    julia> # Plot a diagonal with increasing size and color
-    julia> x = LinRange(0, 1, 11)
-    julia> y = LinRange(0, 1, 11)
-    julia> s = LinRange(50, 400, 11)
-    julia> c = LinRange(0, 255, 11)
-    julia> scatter(x, y, s, c)
+```julia
+$(_example("scatter"))
+```
 """)
 
 # horizontal and vertical coordinates of bar edges
@@ -296,32 +305,26 @@ function _setargs_bar(f, heights; kwargs...)
 end
 
 @plotfunction(barplot, geom = :bar, axes = :axes2d, setargs=_setargs_bar, docstring="""
+    bar(labels, heights; kwargs...)
+    bar(heights; kwargs...)
+
 Draw a bar plot.
 
-If no specific labels are given, the axis is labelled with integer
+If no specific labels are given, the bars are labelled with integer
 numbers starting from 1.
 
-Use the keyword arguments **barwidth**, **baseline** or **horizontal**
-to modify the default width of the bars (by default 0.8 times the separation
-between bars), the baseline value (by default zero), or the direction of
-the bars (by default vertical).
+Use the keyword arguments `barwidth`, `baseline` or `horizontal`
+to modify the aspect of the bars, which by default is:
 
-:param labels: the labels of the bars
-:param heights: the heights of the bars
+* `barwidth = 0.8` (80% of the separation between bars).
+* `baseline = 0.0` (bars starting at zero).
+* `horizontal = false` (vertical bars)
 
-**Usage examples:**
+# Examples
 
-.. code-block:: julia
-
-    julia> # World population by continents (millions)
-    julia> population = Dict("Africa" => 1216,
-                             "America" => 1002,
-                             "Asia" => 4436,
-                             "Europe" => 739,
-                             "Oceania" => 38)
-    julia> barplot(keys(population), values(population))
-    julia> # Horizontal bar plot
-    julia> barplot(keys(population), values(population), horizontal=true)
+```julia
+$(_example("barplot"))
+```
 """)
 
 # Coordinates of the bars of a histogram of the values in `x`
@@ -362,44 +365,95 @@ end
 
 @plotfunction(histogram, geom = :bar, axes = :axes2d, kind = :hist, setargs = _setargs_hist,
 docstring="""
-Draw a histogram.
+    histogram(data; kwargs...)
 
-If **nbins** is **Nothing** or 0, this function computes the number of
-bins as 3.3 * log10(n) + 1,  with n as the number of elements in x,
-otherwise the given number of bins is used for the histogram.
+Draw a histogram of `data`.
 
-:param x: the values to draw as histogram
-:param num_bins: the number of bins in the histogram
+The following keyword arguments can be supplied:
 
-**Usage examples:**
+* `nbins`: Number of bins; by default, or if a number smaller than 1 is given,
+    the number of bins is computed as `3.3 * log10(n) + 1`,  with `n` being the
+    number of elements in `data`.
+* `horizontal`: whether the histogram should be horizontal (`false` by default).
 
-.. code-block:: julia
+!!! note
 
-    julia> # Create example data
-    julia> x = 2 .* rand(100) .- 1
-    julia> # Draw the histogram
-    julia> histogram(x)
-    julia> # Draw the histogram with 19 bins
-    julia> histogram(x, nbins=19)
+    If the vertical axis (or the horizontal axis if `horizontal == true`) is set
+    in logarithmic scale, the bars of the histogram will start at 1.0.
+
+# Examples
+
+```julia
+$(_example("histogram"))
+```
+""")
+
+function _setargs_polarhist(f, x; kwargs...)
+    if get(kwargs, :fullcircle, false)
+        minval, maxval = extrema(x)
+        x = (collect(x) .- minval) .* (2π / (maxval - minval))
+    elseif !get(kwargs, :radians, true)
+        x = collect(x) .* π / 180
+    end
+    _setargs_hist(f, x; kwargs..., horizontal=false)
+end
+
+@plotfunction(polarhistogram, geom = :polarbar, axes = :polar, kind = :polarhist,
+setargs = _setargs_polarhist, kwargs = (ratio=1.0, overlay_axes=true), docstring="""
+    polarhistogram(data; kwargs...)
+
+Draw a polar histogram of angle values contained in `data`.
+
+The following keyword arguments can be supplied:
+
+* `nbins`: Number of bins; by default, or if a number smaller than 1 is given,
+    the number of bins is computed as `3.3 * log10(n) + 1`,  with `n` being the
+    number of elements in `data`.
+* `radians`: Set this argument to `false` to pass and show the angles as degrees.
+    By default, `data` is assumed to be radians and the angular labels of the
+    grid are presented as factors of π.
+* `fullcircle`: Set this argument to `true` to scale the angular coordinates of
+    the histogram and make the bars span over the whole circle.
+
+!!! note
+
+    Logarithmic and reversed scales ar disabled in polar plots
+
+# Examples
+
+```julia
+$(_example("polarhistogram"))
+```
 """)
 
 @plotfunction(plot3, geom = :line3d, axes = :axes3d, kwargs = (ratio=1.0,), setargs=_setargs_line, docstring="""
+    plot3(x, y, z[, spec; kwargs...])
+    plot3(x1, y1, z1, x2, y2, z2...; kwargs...)
+    plot3(x1, y1, z1, spec1...; kwargs...)
+
 Draw one or more three-dimensional line plots.
 
-:param x: the x coordinates to plot
-:param y: the y coordinates to plot
-:param z: the z coordinates to plot
+Lines are defined by the `x`, `y` and `z` coordinates of the connected points,
+given as numeric vectors, and optionally the format string `spec` that defines
+the line and marker style and color as in
+[matplotlib](https://matplotlib.org/3.1.1/api/_as_gen/matplotlib.pyplot.plot.html).
 
-**Usage examples:**
+The `z` vector can be replaced by a callable that defines the Z coordinates as a
+function of the X and Y coordinates.
 
-.. code-block:: julia
+Multiple lines can be defined by triplets of `x`, `y` and `z` coordinates (and
+optionally their format strings), passed sequentially as arguments of `plot3`.
+Alternatively, if various lines have the same X and Y coordinates, their Y values can
+be grouped as columns in a matrix.
 
-    julia> # Create example data
-    julia> x = LinRange(0, 30, 1000)
-    julia> y = cos.(x) .* x
-    julia> z = sin.(x) .* x
-    julia> # Plot the points
-    julia> plot3(x, y, z)
+If no `specs` are given, the series will be plotted as solid lines with a
+predefined sequence of colors.
+
+# Examples
+
+```julia
+$(_example("plot3"))
+```
 """)
 
 function plot3!(f::Figure, x, y, z, u, v, args...; kwargs...)
@@ -422,75 +476,22 @@ _setargs_scatter3(f, x, y, z, c; kwargs...) = ((x,y,z,c), (;colorbar=true, kwarg
 
 @plotfunction(scatter3, geom = :scatter3, axes = :axes3d, setargs = _setargs_scatter3,
 kwargs = (ratio=1.0,), docstring="""
-Draw one or more three-dimensional scatter plots.
+    scatter3(x, y, z[, color; kwargs...])
 
-Additional to x, y and z values, you can provide values for the markers'
-color. Color values will be used in combination with the current colormap.
+Draw a three-dimensional scatter plot.
 
-:param x: the x coordinates to plot
-:param y: the y coordinates to plot
-:param z: the z coordinates to plot
-:param c: the optional color values to plot
+Points are defined by their `x`, `y` and `z` coordinates, given as numeric vectors.
+Additionally, values for markers' `color` can be provided, which will be used in
+combination with the current colormap.
 
-**Usage examples:**
+The last variable can be replaced by a callable that defines it as a
+function of the previous variables.
 
-.. code-block:: julia
+# Examples
 
-    julia> # Create example data
-    julia> x = 2 .* rand(100) .- 1
-    julia> y = 2 .* rand(100) .- 1
-    julia> z = 2 .* rand(100) .- 1
-    julia> c = 999 .* rand(100) .+ 1
-    julia> # Plot the points
-    julia> scatter3(x, y, z)
-    julia> # Plot the points with colors
-    julia> scatter3(x, y, z, c)
-""")
-
-@plotfunction(polar, geom = :polarline, axes = :polar, setargs=_setargs_line, kwargs = (ratio=1.0,), docstring="""
-Draw one or more polar plots.
-
-This function can receive one or more of the following:
-
-- angle values and radius values, or
-- angle values and a callable to determine radius values
-
-:param args: the data to plot
-
-**Usage examples:**
-
-.. code-block:: julia
-
-    julia> # Create example data
-    julia> angles = LinRange(0, 2pi, 40)
-    julia> radii = LinRange(0, 2, 40)
-    julia> # Plot angles and radii
-    julia> polar(angles, radii)
-    julia> # Plot angles and a callable
-    julia> polar(angles, r -> cos(r) ^ 2)
-""")
-
-@plotfunction(polarhistogram, geom = :polarbar, axes = :polar, kind = :polarhist,
-setargs = _setargs_hist, kwargs = (ratio=1.0,), docstring="""
-Draw a polar histogram.
-
-If **nbins** is **Nothing** or 0, this function computes the number of
-bins as 3.3 * log10(n) + 1,  with n as the number of elements in x,
-otherwise the given number of bins is used for the histogram.
-
-:param x: the values to draw as a polar histogram
-:param num_bins: the number of bins in the polar histogram
-
-**Usage examples:**
-
-.. code-block:: julia
-
-    julia> # Create example data
-    julia> x = 2 .* rand(100) .- 1
-    julia> # Draw the polar histogram
-    julia> polarhistogram(x, alpha=0.5)
-    julia> # Draw the polar histogram with 19 bins
-    julia> polarhistogram(x, nbins=19, alpha=0.5)
+```julia
+$(_example("scatter3"))
+```
 """)
 
 # Contour arguments for different inputs:
@@ -534,78 +535,77 @@ end
 
 @plotfunction(contour, geom = :contour, axes = :axes3d, setargs = _setargs_contour,
 kwargs = (rotation=0, tilt=90), docstring="""
+    contour(x, y, z; kwargs...)
+
 Draw a contour plot.
 
-This function uses the current colormap to display a either a series of
+The current colormap is used to display a either a series of
 points or a two-dimensional array as a contour plot. It can receive one
-or more of the following:
+of the following:
 
-- x values, y values and z values, or
-- M x values, N y values and z values on a NxM grid, or
-- M x values, N y values and a callable to determine z values
+- `x` values, `y` values and `z` values.
+- *M* sorted values of the `x` axis, *N* sorted values of the `y` axis,
+    and a set of `z` values on a *N*×*M* grid.
+- *M* sorted values of the `x` axis, *N* sorted values of the `y` axis,
+    and a callable to determine `z` values.
 
 If a series of points is passed to this function, their values will be
 interpolated on a grid. For grid points outside the convex hull of the
 provided points, a value of 0 will be used.
 
-:param args: the data to plot
+Contour lines are colored by default, using the current colormap as color scale.
+Colored lines can be disabled by removing the color bar (with keyword argument
+`colorbar == false`).
 
-**Usage examples:**
+The following keyword arguments can be provided to set the number and aspect of
+the contour lines:
 
-.. code-block:: julia
+* `levels::Int`, the number of contour lines that will be fitted to the data
+    (20 by default).
+* `majorlevels::Int`, the number of levels between labelled contour lines
+    (no labels by default for colored lines, all lines labelled by default
+    if color is removed).
 
-    julia> # Create example point data
-    julia> x = 8 .* rand(100) .- 4
-    julia> y = 8 .* rand(100) .- 4
-    julia> z = sin.(x) .+ cos.(y)
-    julia> # Draw the contour plot
-    julia> contour(x, y, z)
-    julia> # Create example grid data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = LinRange(0, pi, 20)
-    julia> z = sin.(x') .+ cos.(y)
-    julia> # Draw the contour plot
-    julia> contour(x, y, z)
-    julia> # Draw the contour plot using a callable
-    julia> contour(x, y, (x,y) -> sin(x) + cos(y))
+# Examples
+
+```julia
+$(_example("contour"))
+```
 """)
 
 @plotfunction(contourf, geom = :contourf, axes = :axes3d, setargs = _setargs_contour,
 kwargs = (rotation=0, tilt=90, tickdir=-1), docstring="""
+    contourf(x, y, z; kwargs...)
+
 Draw a filled contour plot.
 
-This function uses the current colormap to display a either a series of
-points or a two-dimensional array as a filled contour plot. It can
-receive one or more of the following:
+The current colormap is used to display a either a series of
+points or a two-dimensional array as a filled contour plot. It can receive one
+of the following:
 
-- x values, y values and z values, or
-- M x values, N y values and z values on a NxM grid, or
-- M x values, N y values and a callable to determine z values
+- `x` values, `y` values and `z` values.
+- *M* sorted values of the `x` axis, *N* sorted values of the `y` axis,
+    and a set of `z` values on a *N*×*M* grid.
+- *M* sorted values of the `x` axis, *N* sorted values of the `y` axis,
+    and a callable to determine `z` values.
 
 If a series of points is passed to this function, their values will be
 interpolated on a grid. For grid points outside the convex hull of the
 provided points, a value of 0 will be used.
 
-:param args: the data to plot
+The following keyword arguments can be provided to set the number and aspect of
+the contour lines:
 
-**Usage examples:**
+* `levels::Int`, the number of contour lines that will be fitted to the data
+    (20 by default).
+* `majorlevels::Int`, the number of levels between labelled contour lines
+    (no labels by default).
 
-.. code-block:: julia
+# Examples
 
-    julia> # Create example point data
-    julia> x = 8 .* rand(100) .- 4
-    julia> y = 8 .* rand(100) .- 4
-    julia> z = sin.(x) .+ cos.(y)
-    julia> # Draw the contour plot
-    julia> contourf(x, y, z)
-    julia> # Create example grid data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = LinRange(0, pi, 20)
-    julia> z = sin.(x') .+ cos.(y)
-    julia> # Draw the contour plot
-    julia> contourf(x, y, z)
-    julia> # Draw the contour plot using a callable
-    julia> contourf(x, y, (x,y) -> sin(x) + cos(y))
+```julia
+$(_example("contourf"))
+```
 """)
 
 _setargs_tricont(f, x, y, z, h; kwargs...) = ((x, y, z, h), kwargs...)
@@ -625,28 +625,27 @@ end
 
 @plotfunction(tricont, geom = :tricont, axes = :axes3d, setargs = _setargs_tricont,
 kwargs = (colorbar=true, rotation=0, tilt=90), docstring="""
+    tricont(x, y, z; kwargs...)
+
 Draw a triangular contour plot.
 
-This function uses the current colormap to display a series of points
-as a triangular contour plot. It will use a Delaunay triangulation to
-interpolate the z values between x and y values. If the series of points
-is concave, this can lead to interpolation artifacts on the edges of the
-plot, as the interpolation may occur in very acute triangles.
+The current colormap is used to display a series of points
+as a triangular contour plot. `z` values are interpolated between `x` and `y`
+values through [Delaunay triangulation](http://mathworld.wolfram.com/DelaunayTriangulation.html).
 
-:param x: the x coordinates to plot
-:param y: the y coordinates to plot
-:param z: the z coordinates to plot
+The number of contour lines can be set by the keyword argument `levels`
+(by default `levels = 20`).
 
-**Usage examples:**
+!!! note
 
-.. code-block:: julia
+    If the series of points is concave, there may be interpolation artifacts on
+    the edges of the plot, as the interpolation may occur in very acute triangles.
 
-    julia> # Create example point data
-    julia> x = 8 .* rand(100) .- 4
-    julia> y = 8 .* rand(100) .- 4
-    julia> z = sin.(x) + cos.(y)
-    julia> # Draw the triangular contour plot
-    julia> tricont(x, y, z)
+# Examples
+
+```julia
+$(_example("tricont"))
+```
 """)
 
 function _setargs_surface(f, x, y, z; accelerate = true, kwargs...)
@@ -667,103 +666,76 @@ end
 
 @plotfunction(surface, geom = :surface, axes = :axes3d, setargs = _setargs_surface,
 kwargs = (colorbar=true, accelerate=true), docstring="""
+    surface(x, y, z; kwargs...)
+
 Draw a three-dimensional surface plot.
 
-This function uses the current colormap to display a either a series of
-points or a two-dimensional array as a surface plot. It can receive one or
-more of the following:
+Either a series of points or a two-dimensional array is drawn as
+a surface plot, colored according to the Z coordinates and the
+current colormap. It can receive one of the following:
 
-- x values, y values and z values, or
-- M x values, N y values and z values on a NxM grid, or
-- M x values, N y values and a callable to determine z values
+- `x` values, `y` values and `z` values.
+- *M* sorted values of the `x` axis, *N* sorted values of the `y` axis,
+    and a set of `z` values on a *N*×*M* grid.
+- *M* sorted values of the `x` axis, *N* sorted values of the `y` axis,
+    and a callable to determine `z` values.
 
 If a series of points is passed to this function, their values will be
 interpolated on a grid. For grid points outside the convex hull of the
 provided points, a value of 0 will be used.
 
-:param args: the data to plot
+# Examples
 
-**Usage examples:**
-
-.. code-block:: julia
-
-    julia> # Create example point data
-    julia> x = 8 .* rand(100) .- 4
-    julia> y = 8 .* rand(100) .- 4
-    julia> z = sin.(x) .+ cos.(y)
-    julia> # Draw the surface plot
-    julia> surface(x, y, z)
-    julia> # Create example grid data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = LinRange(0, pi, 20)
-    julia> z = sin.(x') .+ cos.(y)
-    julia> # Draw the surface plot
-    julia> surface(x, y, z)
-    julia> # Draw the surface plot using a callable
-    julia> surface(x, y, (x,y) -> sin(x) + cos(y))
+```julia
+$(_example("surface"))
+```
 """)
 
 @plotfunction(wireframe, geom = :wireframe, axes = :axes3d, setargs = _setargs_surface, docstring="""
+    wireframe(x, y, z; kwargs...)
+
 Draw a three-dimensional wireframe plot.
 
-This function uses the current colormap to display a either a series of
-points or a two-dimensional array as a wireframe plot. It can receive one
-or more of the following:
+Either a series of points or a two-dimensional array is drawn as
+a wireframe plot. It can receive one of the following:
 
-- x values, y values and z values, or
-- M x values, N y values and z values on a NxM grid, or
-- M x values, N y values and a callable to determine z values
+- `x` values, `y` values and `z` values.
+- *M* sorted values of the `x` axis, *N* sorted values of the `y` axis,
+    and a set of `z` values on a *N*×*M* grid.
+- *M* sorted values of the `x` axis, *N* sorted values of the `y` axis,
+    and a callable to determine `z` values.
 
 If a series of points is passed to this function, their values will be
 interpolated on a grid. For grid points outside the convex hull of the
 provided points, a value of 0 will be used.
 
-:param args: the data to plot
+# Examples
 
-**Usage examples:**
-
-.. code-block:: julia
-
-    julia> # Create example point data
-    julia> x = 8 .* rand(100) .- 4
-    julia> y = 8 .* rand(100) .- 4
-    julia> z = sin.(x) .+ cos.(y)
-    julia> # Draw the wireframe plot
-    julia> wireframe(x, y, z)
-    julia> # Create example grid data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = LinRange(0, pi, 20)
-    julia> z = sin.(x') .+ cos.(y)
-    julia> # Draw the wireframe plot
-    julia> wireframe(x, y, z)
-    julia> # Draw the wireframe plot using a callable
-    julia> wireframe(x, y, (x,y) -> sin(x) + cos(y))
+```julia
+$(_example("wireframe"))
+```
 """)
 
 @plotfunction(trisurf, geom = :trisurf, axes = :axes3d, setargs = _setargs_tricont,
 kwargs = (colorbar=true,), docstring="""
+    tricont(x, y, z; kwargs...)
+
 Draw a triangular surface plot.
 
-This function uses the current colormap to display a series of points
-as a triangular surface plot. It will use a Delaunay triangulation to
-interpolate the z values between x and y values. If the series of points
-is concave, this can lead to interpolation artifacts on the edges of the
-plot, as the interpolation may occur in very acute triangles.
+Either a series of points or a two-dimensional array is drawn as a
+triangular surface plot. `z` values are interpolated between `x` and `y`
+values through [Delaunay triangulation](http://mathworld.wolfram.com/DelaunayTriangulation.html).
 
-:param x: the x coordinates to plot
-:param y: the y coordinates to plot
-:param z: the z coordinates to plot
+!!! note
 
-**Usage examples:**
+    If the series of points is concave, there may be interpolation artifacts on
+    the edges of the plot, as the interpolation may occur in very acute triangles.
 
-.. code-block:: julia
+# Examples
 
-    julia> # Create example point data
-    julia> x = 8 .* rand(100) .- 4
-    julia> y = 8 .* rand(100) .- 4
-    julia> z = sin.(x) .+ cos.(y)
-    julia> # Draw the triangular surface plot
-    julia> trisurf(x, y, z)
+```julia
+$(_example("tricont"))
+```
 """)
 
 function _setargs_heatmap(f, data; kwargs...)
@@ -780,30 +752,28 @@ end
 
 @plotfunction(heatmap, geom = :heatmap, axes = :axes2d, setargs = _setargs_heatmap,
 kwargs = (colorbar=true, tickdir=-1), docstring="""
+    heatmap(data; kwargs...)
+
 Draw a heatmap.
 
-This function uses the current colormap to display a two-dimensional
-array as a heatmap. The array is drawn with its first value in the bottom
-left corner, so in some cases it may be neccessary to flip the columns
-(see the example below).
+The current colormap is used to display a two-dimensional array `data` as a heatmap.
 
-By default the function will use the column and row indices for the x- and
+If `data` is an *N*×*M* array, the cells of the heatmap will be plotted in
+an uniform grid of square cells,spanning the interval `[1, M+1]` in the X-axis,
+and `[1, N+1]` in the Y-axis.
+The array is drawn with its first value in the bottom left corner, so in some
+cases it may be neccessary to flip the columns.
+
+By default column and row indices are used for the x- and
 y-axes, respectively, so setting the axis limits is recommended. Also note that the
 values in the array must lie within the current z-axis limits so it may
 be neccessary to adjust these limits or clip the range of array values.
 
-:param data: the heatmap data
+# Examples
 
-**Usage examples:**
-
-.. code-block:: julia
-
-    julia> # Create example data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = LinRange(0, pi, 20)
-    julia> z = sin.(x') .+ cos.(y)
-    julia> # Draw the heatmap
-    julia> heatmap(z)
+```julia
+$(_example("heatmap"))
+```
 """)
 
 @plotfunction(polarheatmap, geom = :polarheatmap, axes = :polar, setargs = _setargs_heatmap, kwargs = (colorbar=true, overlay_axes=true, ratio=1.0))
@@ -811,27 +781,21 @@ be neccessary to adjust these limits or clip the range of array values.
 _setargs_hexbin(f, x, y; kwargs...) = ((x, y, emptyvector(Float64), [0.0, 1.0]), kwargs)
 
 @plotfunction(hexbin, geom = :hexbin, axes = :axes2d, setargs = _setargs_hexbin,
-kwargs = (colorbar=true,), docstring="""
+kwargs = (colorbar=true, nbins=40), docstring="""
+    hexbin(x, y; kwargs...)
+
 Draw a hexagon binning plot.
 
-This function uses hexagonal binning and the the current colormap to
-display a series of points. It  can receive one or more of the following:
+Hexagonal binning and the the current colormap are used to display a bi-dimensional
+series of points given by `x` and `y`.
+The number of bins is 40 by default; use the keyword argument `nbins` to set
+it as a different number.
 
-- x values and y values, or
-- x values and a callable to determine y values, or
-- y values only, with their indices as x values
+# Examples
 
-:param args: the data to plot
-
-**Usage examples:**
-
-.. code-block:: julia
-
-    julia> # Create example data
-    julia> x = randn(100000)
-    julia> y = randn(100000)
-    julia> # Draw the hexbin plot
-    julia> hexbin(x, y)
+```julia
+$(_example("hexbin"))
+```
 """)
 
 # Needs to be extended
@@ -882,25 +846,19 @@ end
 
 @plotfunction(imshow, geom = :image, axes = :axes2d, setargs = _setargs_imshow,
 kwargs = (xticks=NULLPAIR, yticks=NULLPAIR, noframe=true), docstring="""
+    imshow(img; kwargs...)
+
 Draw an image.
 
-This function can draw an image either from reading a file or using a
-two-dimensional array and the current colormap.
+The input `img` can be either a string with a valid file name of an image,
+or a matrix of values between 0 and 1, which will be drawn with a hue
+corresponding to the relative position of each value in the current colormap.
 
-:param image: an image file name or two-dimensional array
+# Examples
 
-**Usage examples:**
-
-.. code-block:: julia
-
-    julia> # Create example data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = LinRange(0, pi, 20)
-    julia> z = sin.(x') .+ cos.(y)
-    julia> # Draw an image from a 2d array
-    julia> imshow(z)
-    julia> # Draw an image from a file
-    julia> imshow("example.png")
+```julia
+$(_example("imshow"))
+```
 """)
 
 function _setargs_isosurf(f, v, isovalue; color = [0.0, 0.5, 0.8], kwargs...)
@@ -913,90 +871,116 @@ end
 
 @plotfunction(isosurface, geom = :isosurf, axes = :axes3d, setargs = _setargs_isosurf,
 kwargs = (xticks=NULLPAIR, yticks=NULLPAIR, zticks=NULLPAIR, ratio=1.0, gr3=true), docstring="""
-Draw an isosurface.
+    isosurface(data, isovalue; kwargs...)
 
-This function can draw an image either from reading a file or using a
-two-dimensional array and the current colormap. Values greater than the
-isovalue will be seen as outside the isosurface, while values less than
-the isovalue will be seen as inside the isosurface.
+Draw an isosurface determined by the region of the three-dimensional array `data`
+around a given `isovalue`.
 
-:param v: the volume data
-:param isovalue: the isovalue
+The isosurface is calculated so that values in `data` greater than `isovalue` are
+considered to be outside the surface, and the values lower than `isovalue` are
+inside the surface.
 
-**Usage examples:**
+The color of the isosurface can be chosen with the keyword argument
+`color = (r, g, b)`, with the red, green and blue values (between 0 and 1).
 
-.. code-block:: julia
+# Examples
 
-    julia> # Create example data
-    julia> s = LinRange(-1, 1, 40)
-    julia> v = 1 .- (s .^ 2 .+ s' .^ 2 .+ reshape(s,1,1,:) .^ 2) .^ 0.5
-    julia> # Draw an image from a 2d array
-    julia> isosurface(v, isovalue=0.2)
+```julia
+$(_example("isosurface"))
+```
 """)
 
-@plotfunction(shade, geom = :shade, axes = :axes2d, kwargs = (tickdir=-1,), docstring="""
-Draw a point or line based heatmap.
+const XFORMS = ["boolean", "linear", "log", "loglog", "cubic", "equalized"]
 
-This function uses the current colormap to display a series of points or polylines. For line data, NaN values can be used as separator.
+function _setargs_shade(f, x, y; kwargs...)
+    # Determine type of footprint
+    default_footprint = hasnan(x) || hasnan(y) ? "lines" : "points"
+    footprint = get(kwargs, :footprint, default_footprint)
+    if footprint == "lines"
+        kwargs = (; shadelines = 1.0, kwargs...)
+    elseif footprint == "points"
+        kwargs = (; shadelines = 0.0, kwargs...)
+    else
+        throw(ArgumentError("""`footprint` must be either `"lines"` or `"points"`"""))
+    end
+    # Transformation
+    if haskey(kwargs, :xform)
+        xf = _index(kwargs[:xform], XFORMS, 0)
+        kwargs = (; kwargs..., xform=float(xf))
+    end
+    return ((x, y), kwargs)
+end
 
-:param args: the data to plot
-:param xform: the transformation type used for color mapping
+@plotfunction(shade, geom = :shade, axes = :axes2d, kwargs = (tickdir=-1,),
+setargs = _setargs_shade, docstring="""
+    shade(x, y; kwargs...)
 
-The available transformation types are:
+Draw a point- or line-based heatmap.
 
-    +----------------+-+-------------------+
-    |   XFORM_BOOLEAN|0|boolean            |
-    +----------------+-+-------------------+
-    |    XFORM_LINEAR|1|linear             |
-    +----------------+-+-------------------+
-    |       XFORM_LOG|2|logarithmic        |
-    +----------------+-+-------------------+
-    |    XFORM_LOGLOG|3|double logarithmic |
-    +----------------+-+-------------------+
-    |     XFORM_CUBIC|4|cubic              |
-    +----------------+-+-------------------+
-    | XFORM_EQUALIZED|5|histogram equalized|
-    +----------------+-+-------------------+
+The current colormap is used to display the footprint left by the pairs of
+`x`, `y` values. If the data contain `NaN` or `missing`, the footprints
+will be based on lines separated by those values. Otherwise the footprints
+will be based on points. The type of footprint can be enforced regardless
+of the input by the keyword argument `footprint = "lines"` or
+`footprint = "points"`.
 
-**Usage examples:**
+The value of that footprint is determined by a transformation that can be
+adjusted by the keyword argument `xform` --- a number or a string from the
+following table:
 
-.. code-block:: julia
+| # |String       |description                  |
+|:-:|-------------|-----------------------------|
+| 0 |`"boolean"`  |boolean                      |
+| 1 |`"linear"`   |linear                       |
+| 2 |`"log"`      |logarithmic                  |
+| 3 |`"loglog"`   |double logarithmic           |
+| 4 |`"cubic"`    |cubic                        |
+| 5 |`"equalized"`|histogram equalized (default)|
 
-    # Create point data
-    julia> x = randn(100_000)
-    julia> y = randn(100_000)
-    julia> shade(x, y)
-    julia> # Create line data with NaN as polyline separator
-    julia> x = [randn(10000); NaN; randn(10000)]
-    julia> x = [randn(10000); NaN; randn(10000)]
-    julia> shade(x, y)
+# Examples
+
+```julia
+$(_example("shade"))
+```
 """)
+
+const ALGORITHMS = ["emission", "absorption", "mip"]
 
 function _setargs_volume(f, v::Array{T, 3}; kwargs...) where {T}
     (nx, ny, nz) = size(v)
+    # Algorithm
+    if haskey(kwargs, :algorithm)
+        alg = _index(kwargs[:algorithm], ALGORITHMS, 0)
+        kwargs = (; kwargs..., algorithm=float(alg))
+    end
     (([nx], [ny], [nz], vec(v)), kwargs)
 end
 
 @plotfunction(volume, geom = :volume, axes = :axes3d, setargs = _setargs_volume,
 kwargs = (colorbar=true,), docstring="""
-Draw a volume.
+    volume(v; kwargs...)
 
-This function can draw a three-dimensional numpy array using volume rendering. The volume data is reduced to a two-dimensional image using an emission or absorption model or by a maximum intensity projection. After the projection the current colormap is applied to the result.
+Draw a the three-dimensional array `v`, using volume rendering.
 
-:param v: the volume data
-:param algorithm: the algorithm used to reduce the volume data. Available algorithms are “maximum”, “emission” and “absorption”.
+The volume data is reduced to a two-dimensional image using
+an emission or absorption model, or by a maximum intensity projection.
+After the projection the current colormap is applied to the result.
 
-**Usage examples:**
+The method to reduce volume data can be defined by the keyword argument
+`algorithm` --- a number or a string from the
+following table:
 
-.. code-block:: julia
+| # |String        |description                 |
+|:-:|--------------|----------------------------|
+| 0 |`"emission"`  |emission model (default)    |
+| 1 |`"absorption"`|absorption model            |
+| 2 |`"mip"`       |maximum intensity projection|
 
-    julia> # Create example data
-    julia> s = LinRange(-1, 1, 40)
-    julia> v = 1 .- (x.^2 .+ y'.^2 .+ reshape(z,1,1,:).^2).^0.5 - 0.25 .* rand(40, 40, 40)
-    julia> # Draw the 3d volume data
-    julia> volume(v)
-    julia> # Draw the 3d volume data using an emission model
-    julia> volume(v, algorithm=2)
+# Examples
+
+```julia
+$(_example("volume"))
+```
 """)
 
 function oplot!(f::Figure, args...; kwargs...)
@@ -1011,43 +995,44 @@ function oplot!(f::Figure, args...; kwargs...)
 end
 
 """
+    oplot(args...; kwargs...)
+
 Draw one or more line plots over another plot.
-This function can receive one or more of the following:
-- x values and y values, or
-- x values and a callable to determine y values, or
-- y values only, with their indices as x values
-:param args: the data to plot
-**Usage examples:**
-.. code-block:: julia
-    julia> # Create example data
-    julia> x = LinRange(-2, 2, 40)
-    julia> y = 2 .* x .+ 4
-    julia> # Draw the first plot
-    julia> plot(x, y)
-    julia> # Plot graph over it
-    julia> oplot(x, x -> x^3 + x^2 + x)
+
+Equivalent to calling [`plot`](@ref) after holding the current plot,
+except that the axes limits are not re-adjusted to the new data.
+
+# Examples
+
+```julia
+$(_example("oplot"))
+```
 """
 oplot(args...; kwargs...) = oplot!(gcf(), args...; kwargs...)
 
+
 """
-Save the current figure to a file.
+    savefig(filename[, fig])
 
-This function draw the current figure using one of GR's workstation types
-to create a file of the given name. Which file types are supported depends
-on the installed workstation types, but GR usually is built with support
-for .png, .jpg, .pdf, .ps, .gif and various other file formats.
+Save a figure to a file.
 
-:param filename: the filename the figure should be saved to
+Draw the current figure in a file of the given name.
+Which file types are supported depends on the installed workstation types,
+but GR usually is built with support for
+.png, .jpg, .pdf, .ps, .gif and various other file formats.
 
-**Usage examples:**
+If no figure is given (optional argument `fig`), the current figure
+is used.
 
-.. code-block:: julia
+# Examples
 
-    julia> # Create a simple plot
-    julia> x = 1:100
-    julia> plot(x, 1 ./ (x .+ 1))
-    julia> # Save the figure to a file
-    julia> savefig("example.png")
+```julia
+# Create a simple plot
+x = 1:100
+plot(x, 1 ./ (x .+ 1))
+# Save the figure to a file
+savefig("example.png")
+```
 """
 function savefig(filename, fig=gcf())
     GR.beginprint(filename)

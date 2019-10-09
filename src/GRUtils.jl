@@ -7,7 +7,8 @@ export Figure, gcf, subplot, currentplot, draw, savefig,
     barplot, histogram, polarhistogram,
     contour, contourf, shade, surface, tricont, trisurf, volume, wireframe,
     heatmap, polarheatmap, hexbin, imshow, isosurface,
-    aspectratio, colorbar, grid, hold, legend, title, panzoom, zoom,
+    aspectratio, colorbar, grid, hold, legend, radians,
+    title, panzoom, zoom,
     xflip, xlabel, xlim, xlog, xticks, xticklabels,
     yflip, ylabel, ylim, ylog, yticks, xticklabels,
     zflip, zlabel, zlim, zlog, zticks,
@@ -16,7 +17,8 @@ export Figure, gcf, subplot, currentplot, draw, savefig,
     barplot!, histogram!, polarhistogram!,
     contour!, contourf!, shade!, surface!, tricont!, trisurf!, volume!, wireframe!,
     heatmap!, polarheatmap!, hexbin!, imshow!, isosurface!,
-    aspectratio!, colorbar!, grid!, hold!, legend!, title!, panzoom!, zoom!,
+    aspectratio!, colorbar!, grid!, hold!, legend!, title!,
+    radians!, panzoom!, zoom!,
     xflip!, xlabel!, xlim!, xlog!, xticks!, xticklabels!,
     yflip!, ylabel!, ylim!, ylog!, yticks!, xticklabels!,
     zflip!, zlabel!, zlim!, zlog!, zticks!
@@ -36,13 +38,26 @@ const DISTINCT_CMAP = [ 0, 1, 984, 987, 989, 983, 994, 988 ]
 const UNITSQUARE = [0.0, 1.0, 0.0, 1.0]
 const NULLPAIR = (0.0, 0.0)
 
-function _min(a)
-  minimum(filter(!isnan, a))
+_min(a) = minimum(filter(!isnan, a))
+_max(a) = maximum(filter(!isnan, a))
+
+function hasnan(a)
+    for el ∈ a
+        (el === NaN || el === missing) && return true
+    end
+    return false
 end
 
-function _max(a)
-  maximum(filter(!isnan, a))
+_index(item::Real, args...) = Int(item)
+
+function _index(item, collection, base=1, default=nothing)::Union{Int, Nothing}
+    ix = indexin([item], collection)[1]
+    ix isa Nothing && return default
+    return ix - 1 + base
 end
+
+# Fetch example from filename and return it as String
+_example(name) = read(joinpath(dirname(@__FILE__), "../examples/docstrings", "$name.jl"), String)
 
 include("geometries.jl")
 include("axes.jl")
@@ -58,7 +73,7 @@ const EMPTYFIGURE = Figure((0.0, 0.0), [PlotObject()])
 const CURRENTFIGURE = Ref(EMPTYFIGURE)
 
 """
-  gcf()
+    gcf()
 
 Get the global current figure.
 """

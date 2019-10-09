@@ -1,39 +1,24 @@
 """
-    Geometry(kind::Symbol [; kwargs...])
+    Geometry(kind, x, y, z, c, spec, label, attributes)
 
-`Geometry` is a type of objects that contain the data represented in a plot
+Return a `Geometry` containing the data represented in a plot
 by means of geometric elements (lines, markers, shapes, etc.).
 
 Each `Geometry` has a `kind`, given by a `Symbol` with the name of the
-geometric element that it represents. The low level instructions to draw a
-a geometry of a given kind are defined by the method `draw(::Geometry, ::Val{kind})`.
+geometric element that it represents, such as `:line` for lines, `:scatter` for
+scattered points, `:bar` for bars, etc. In addition it has the following fields:
 
-The usual way of creating a `Geometry` is through a constructor whose only
-positional argument is its `kind`, and the rest of fields are given
-as keyword arguments (empty by default). Those fields are:
-
-* `x`, `y`, `z`, `c`: Vectors of `Float64` which are mapped to different
+* **`x`**, **`y`**, **`z`**, **`c`**: Vectors of `Float64` numbers that are mapped to different
     characteristics of the geometry. `x` and `y` are normally their X and Y
     coordinates; `z` usually is its Z coordinate in 3-D plots, or another
     aesthetic feature (e.g. the size in scatter plots); `c` is usually meant
     to represent the color scale, if it exists.
-* `spec`: a `String` with the specification of the line style, the type of marker
+* **`spec`**: a `String` with the specification of the line style, the type of marker
     and the color of lines in line plots.
     (Cf. the defintion of format strings in [matplotlib](https://matplotlib.org/3.1.1/api/_as_gen/matplotlib.pyplot.plot.html))
-* `label`: a `String` with the label used to identify the geometry in the plot legend.
-* `attributes`: a `Dict{Symbol, Float64}` with extra attributes to control how
+* **`label`**: a `String` with the label used to identify the geometry in the plot legend.
+* **`attributes`**: a `Dict{Symbol, Float64}` with extra attributes to control how
     geometries are plotted.
-
-See also [`geometries`](@ref).
-
-### Note on the return type of `draw(::Geometry [, ::Val])`
-
-The method `draw(::Geometry, ::Val)` should returns `nothing` or a `Vector{Float64}`
-with the limits of the color scale &mdash; when it is calculated by the drawing
-operation &mdash; e.g. for `draw(::Geometry, ::Val{:hexbin})`.
-
-The generic method `draw(g::Geometry)` calls the kind-specific method for
-`g.kind`, and returns the vector with the color limits or an empty vector.
 """
 struct Geometry
     kind::Symbol
@@ -48,6 +33,17 @@ end
 
 emptyvector(T::DataType) = Array{T,1}(undef,0)
 
+"""
+    Geometry(kind::Symbol [; kwargs...])
+
+Return a `Geometry` with selected parameters given by keyword arguments.
+
+Most geometries do not need data for all the possible parameters that the
+`Geometry` type accepts. Thus, to simplify the creation of geometries, an
+alternative constructor takes the geometry’s `kind` as the only positional
+argument, and the rest of fields are given as keyword arguments
+(empty by default).
+"""
 Geometry(kind::Symbol;
     x=emptyvector(Float64),
     y=emptyvector(Float64),
@@ -66,23 +62,33 @@ end
 """
     geometries(kind, x [, y, z, c; kwargs...]) -> Vector{Geometry}
 
-Create a vector of [`Geometry`](@ref) objects of a given `kind`, with
-`x`, `y`, `z` and `c` coordinates, and other parameters determined by the
-keyword arguments.
+Create a vector of [`Geometry`](@ref) objects of a given `kind`, from arrays of
+data that define the coordinates of the geometries. All the other parameters
+of the geometries are given as keyword arguments
 
+This function accepts coordinates defined only by one array of numbers,
+by two variables (`x` and `y`, typically for 2-D plots), three (`x`, `y`, `z`)
+or all four variables (`x`, `y`, `z` and `c`).
 If there is only one array `x` of real numbers given for the geometry coordinates,
-this will actually be used as Y coordinates, and X will be defined as a sequence
+they will actually be used as Y coordinates, and X will be defined as a sequence
 of integers starting at 1. If that array contains complex numbers, the real part
 will be taken as X coordinates, and the imaginary part as Y coordinates.
 
-The last coordinate can be given as a function that will take the previous
-coordinates as inputs.
+The coordinates can be given as vectors or matrices with the same number of rows.
+In the latter case, each column of the matrices will be used to define a different
+`Geometry`. If some coordinates are given as vectors while other are in matrices,
+vectors will be recycled in all the geometries.
+E.g. if `x` is a vector with N numbers and `y` a matrix with N rows and M columns,
+the result will be a M-vector of geometries `g` such that `g[i]` will be a
+geometry whose X coordinates are the vector `x`, and whose Y coordinates are the
+`i`-th column of `y`.
+
+In addition, the last coordinate can be given as a "broadcastable" function that
+takes the previous coordinates as inputs.
 """
-# Complex arguments processed as pair of real, imaginary values
 geometries(kind, x::AbstractVecOrMat{<:Complex}, args...; kwargs...) =
     geometries(kind, real.(x), imag.(x), args...; kwargs...)
 
-# Parse function arguments
 geometries(kind, x::AbstractVecOrMat{<:Real}, f::Function, args...; kwargs...) =
     geometries(kind, x, f.(x), args...; kwargs...)
 
@@ -128,6 +134,10 @@ end
 ## `draw` methods ##
 ####################
 
+# call specialized methods for the geometry's kind, and return either `nothing`
+# or a `Vector{Float64}` with the limits of the color scale - when it is
+# calculated by the drawing operation.
+
 function draw(g::Geometry)
     GR.savestate()
     GR.settransparency(get(g.attributes, :alpha, 1.0))
@@ -143,21 +153,34 @@ draw(g::Geometry, ::Any) = nothing # for unknown kinds
 
 function draw(g::Geometry, ::Val{:line})::Nothing
     mask = GR.uselinespec(g.spec)
-    hasline(mask) && GR.polyline(g.x, g.y)
-    hasmarker(mask) && GR.polymarker(g.x, g.y)
+    if hasline(mask)
+        GR.setlinewidth(float(get(g.attributes, :linewidth, 1.0)))
+        GR.polyline(g.x, g.y)
+    end
+    if hasmarker(mask)
+        GR.setmarkersize(2float(get(g.attributes, :markersize, 1.0)))
+        GR.polymarker(g.x, g.y)
+    end
     return nothing
 end
 
 function draw(g::Geometry, ::Val{:line3d})::Nothing
     mask = GR.uselinespec(g.spec)
-    hasline(mask) && GR.polyline3d(g.x, g.y, g.z)
-    hasmarker(mask) && GR.polymarker3d(g.x, g.y, g.z)
+    if hasline(mask)
+        GR.setlinewidth(float(get(g.attributes, :linewidth, 1.0)))
+        GR.polyline3d(g.x, g.y, g.z)
+    end
+    if hasmarker(mask)
+        GR.setmarkersize(2float(get(g.attributes, :markersize, 1.0)))
+        GR.polymarker3d(g.x, g.y, g.z)
+    end
     return nothing
 end
 
 function draw(g::Geometry, ::Val{:stair})::Nothing
     mask = GR.uselinespec(g.spec)
     if hasline(mask)
+        GR.setlinewidth(float(get(g.attributes, :linewidth, 1.0)))
         n = length(g.x)
         if g.attributes[:stair_position] < 0 # pre
             xs = zeros(2n - 1)
@@ -197,15 +220,19 @@ function draw(g::Geometry, ::Val{:stair})::Nothing
         end
         GR.polyline(xs, ys)
     end
-    hasmarker(mask) && GR.polymarker(g.x, g.y)
+    if hasmarker(mask)
+        GR.setmarkersize(2float(get(g.attributes, :markersize, 1.0)))
+        GR.polymarker(g.x, g.y)
+    end
     return nothing
 end
 
 function draw(g::Geometry, ::Val{:stem})::Nothing
     baseline = Float64(get(g.attributes, :baseline, 0.0))
-    GR.setlinecolorind(1)
+    GR.setlinewidth(float(get(g.attributes, :linewidth, 1.0)))
     GR.polyline([minimum(g.x), maximum(g.x)], [baseline, baseline])
     GR.setmarkertype(GR.MARKERTYPE_SOLID_CIRCLE)
+    GR.setmarkersize(2float(get(g.attributes, :markersize, 1.0)))
     GR.uselinespec(g.spec)
     for i = 1:length(g.y)
         GR.polyline([g.x[i], g.x[i]], [baseline, g.y[i]])
@@ -227,6 +254,7 @@ end
 
 function draw(g::Geometry, ::Val{:scatter})::Nothing
     GR.setmarkertype(GR.MARKERTYPE_SOLID_CIRCLE)
+    GR.setmarkersize(2float(get(g.attributes, :markersize, 1.0)))
     if !isempty(g.z) || !isempty(g.c)
         if !isempty(g.c)
             # cmin, cmax = plt.kvs[:crange]
@@ -247,6 +275,7 @@ end
 
 function draw(g::Geometry, ::Val{:scatter3})::Nothing
     GR.setmarkertype(GR.MARKERTYPE_SOLID_CIRCLE)
+    GR.setmarkersize(2float(get(g.attributes, :markersize, 1.0)))
     if !isempty(g.c)
         cmin, cmax = extrema(g.c)
         cnorm = map(x -> normalize_color(x, cmin, cmax), g.c)
@@ -274,21 +303,26 @@ end
 
 function draw(g::Geometry, ::Val{:polarline})::Nothing
     mask = GR.uselinespec(g.spec)
-    ymin, ymax = extrema(g.y)
-    ρ = (g.y .- ymin) ./ (ymax .- ymin)
+    ymax = maximum(abs.(g.y))
+    ρ = g.y ./ ymax
     n = length(ρ)
     x = ρ .* cos.(g.x)
     y = ρ .* sin.(g.x)
-    hasline(mask) && GR.polyline(x, y)
-    hasmarker(mask) && GR.polymarker(x, y)
+    if hasline(mask)
+        GR.setlinewidth(float(get(g.attributes, :linewidth, 1.0)))
+        GR.polyline(x, y)
+    end
+    if hasmarker(mask)
+        GR.setmarkersize(2float(get(g.attributes, :markersize, 1.0)))
+        GR.polymarker(x, y)
+    end
     return nothing
 end
 
 function draw(g::Geometry, ::Val{:polarbar})::Nothing
-    xmin, xmax = extrema(g.x)
     ymin, ymax = extrema(g.y)
     ρ = g.y ./ ymax
-    θ = 2pi .* (g.x .- xmin) ./ (xmax - xmin)
+    θ = g.x
     for i = 1:2:length(ρ)
         GR.setfillcolorind(989)
         GR.setfillintstyle(GR.INTSTYLE_SOLID)
@@ -387,18 +421,9 @@ function draw(g::Geometry, ::Val{:isosurf})::Nothing
     GR.selntran(1)
 end
 
-function hasnan(a)
-    for el in a
-        if el === NaN || el === missing
-            return true
-        end
-    end
-    false
-end
-
 function draw(g::Geometry, ::Val{:shade})::Nothing
     xform = Int(get(g.attributes, :xform, 5))
-    if hasnan(g.x)
+    if Bool(g.attributes[:shadelines])
         GR.shadelines(g.x, g.y, xform=xform)
     else
         GR.shadepoints(g.x, g.y, xform=xform)
