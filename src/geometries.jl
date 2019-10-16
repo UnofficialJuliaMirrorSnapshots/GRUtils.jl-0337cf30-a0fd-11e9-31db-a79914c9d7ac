@@ -54,6 +54,12 @@ Geometry(kind::Symbol;
     kwargs...) where K =
     Geometry(kind, x, y, z, c, spec, label, Dict{Symbol,Float64}(kwargs...))
 
+"""
+    Geometry(g::Geometry; kwargs...)
+
+Return a copy of `g` replacing the data and attributes given as
+keyword arguments.
+"""
 function Geometry(g::Geometry; kwargs...)
     kwargs = (; g.attributes..., kwargs...)
     Geometry(g.kind; x=g.x, y=g.y, z=g.z, c=g.c, spec=g.spec, label=g.label, kwargs...)
@@ -228,16 +234,42 @@ function draw(g::Geometry, ::Val{:stair})::Nothing
 end
 
 function draw(g::Geometry, ::Val{:stem})::Nothing
-    baseline = Float64(get(g.attributes, :baseline, 0.0))
     GR.setlinewidth(float(get(g.attributes, :linewidth, 1.0)))
-    GR.polyline([minimum(g.x), maximum(g.x)], [baseline, baseline])
+    # Baseline
+    GR.polyline(g.x[1:2], g.y[1:2])
     GR.setmarkertype(GR.MARKERTYPE_SOLID_CIRCLE)
     GR.setmarkersize(2float(get(g.attributes, :markersize, 1.0)))
     GR.uselinespec(g.spec)
-    for i = 1:length(g.y)
-        GR.polyline([g.x[i], g.x[i]], [baseline, g.y[i]])
+    for i = 3:length(g.y)
+        GR.polyline([g.x[i], g.x[i]], [g.y[1], g.y[i]])
         GR.polymarker([g.x[i]], [g.y[i]])
     end
+end
+
+function draw(g::Geometry, ::Val{:errorbar})::Nothing
+    horizontal = get(g.attributes, :horizontal, 0.0) == 1.0
+    mask = GR.uselinespec(g.spec)
+    if hasline(mask)
+        GR.setlinewidth(float(get(g.attributes, :linewidth, 1.0)))
+        if horizontal
+            for i = 2:3:length(g.x)
+                GR.polyline([g.x[i-1], g.x[i+1]], [g.y[i], g.y[i]]) # main bar
+                GR.polyline([g.x[i-1], g.x[i-1]], [g.y[i-1], g.y[i+1]]) # low bar
+                GR.polyline([g.x[i+1], g.x[i+1]], [g.y[i-1], g.y[i+1]]) # high bar
+            end
+        else
+            for i = 2:3:length(g.x)
+                GR.polyline([g.x[i], g.x[i]], [g.y[i-1], g.y[i+1]]) # main bar
+                GR.polyline([g.x[i-1], g.x[i+1]], [g.y[i-1], g.y[i-1]]) # low bar
+                GR.polyline([g.x[i-1], g.x[i+1]], [g.y[i+1], g.y[i+1]]) # high bar
+            end
+        end
+    end
+    if hasmarker(mask)
+        GR.setmarkersize(2float(get(g.attributes, :markersize, 1.0)))
+        GR.polymarker(g.x[2:3:end], g.y[2:3:end])
+    end
+    return nothing
 end
 
 """

@@ -1,5 +1,5 @@
 ## Select keyword arguments from lists
-const KEYS_GEOM_ATTRIBUTES = [:accelerate, :algorithm, :alpha, :baseline, :clabels, :label, :linewidth, :markersize, :shadelines, :spec, :stair_position, :xform]
+const KEYS_GEOM_ATTRIBUTES = [:accelerate, :algorithm, :alpha, :baseline, :clabels, :horizontal, :label, :linewidth, :markersize, :shadelines, :spec, :stair_position, :xform]
 const KEYS_PLOT_ATTRIBUTES = [:backgroundcolor, :colorbar, :colormap, :location, :hold, :overlay_axes, :radians, :ratio, :scheme, :subplot, :title,
     :xflip, :xlabel, :xlim, :xlog, :xticklabels, :yflip, :ylabel, :ylim, :ylog, :yticklabels, :zflip, :zlabel, :zlim, :zlog]
 
@@ -120,8 +120,13 @@ their format strings), passed sequentially as arguments of `plot`.
 Alternatively, if various lines have the same X coordinates, their Y values can
 be grouped as columns in a matrix.
 
-If no `specs` are given, the series will be plotted as solid lines with a
+If no `spec` is given, the series will be plotted as solid lines with a
 predefined sequence of colors.
+
+Additionally, specifications of lines and markers can be defined by keyword arguments:
+
+* `linewidth`: line width scale factor.
+* `markersize`: marker size scale factor.
 
 This function can receive a single numeric vector or matrix, which will be
 interpreted as the Y coordinates; in such case the X coordinates will be a
@@ -176,7 +181,17 @@ $(_example("stair"))
 ```
 """)
 
-@plotfunction(stem, geom = :stem, axes = :axes2d, setargs=_setargs_line, docstring="""
+function _setargs_stem(f, args...; baseline=0.0, kwargs...)
+    args, kwargs = _setargs_line(f, args...; kwargs...)
+    x = collect(args[1])
+    y = collect(args[2])
+    args = args[3:end]
+    prepend!(x, [minimum(x), maximum(x)])
+    prepend!(y, float.([baseline, baseline]))
+    return ((x, y, args...), kwargs)
+end
+
+@plotfunction(stem, geom = :stem, axes = :axes2d, setargs=_setargs_stem, docstring="""
     stem(x[, y, spec; kwargs...])
     stem(x1, y1, x2, y2...; kwargs...)
     stem(x1, y1, spec1...; kwargs...)
@@ -193,6 +208,79 @@ Y coordinate where stems should start from.
 
 ```julia
 $(_example("stem"))
+```
+""")
+
+function _setargs_errorbar(f, x, y, args...; kwargs...)
+    # Define bar size
+    if length(args) == 0
+        throw(ArgumentError("errorbar sizes not defined"))
+    else
+        low = args[1]
+        high = (length(args)==1) ? low : args[2]
+    end
+    if length(low) == 1
+        low = repeat(low, length(x))
+    end
+    if length(high) == 1
+        high = repeat(high, lenght(x))
+    end
+    # Cap width
+    horizontal = get(kwargs, :horizontal, false)
+    if haskey(kwargs, :capwidth)
+        w = kwargs[:capwidth]/2
+    elseif horizontal
+        w = 0.015 * (maximum(y) - minimum(y))
+    else
+        w = 0.015 * (maximum(x) - minimum(x))
+    end
+    # Coordinates
+    if horizontal
+        x3 = (x' .+ [-vec(low)'; zeros(1, length(x)); vec(high)'])[:]
+        y3 = (y' .+ [-w; 0.0; w])[:]
+    else
+        x3 = (x' .+ [-w; 0.0; w])[:]
+        y3 = (y' .+ [-vec(low)'; zeros(1, length(y)); vec(high)'])[:]
+    end
+    if typeof(args[end]) <: AbstractString
+        kwargs = (; spec=args[end], kwargs...)
+    end
+    return ((x3, y3), kwargs)
+end
+
+@plotfunction(errorbar, geom = :errorbar, axes = :axes2d, setargs=_setargs_errorbar, docstring="""
+    errorbar(x, y, err[, spec; kwargs...])
+    errorbar(x, y, errlow, errhigh[, spec; kwargs...])
+
+Draw a series of error bars.
+
+Error bars are defined by their `x` and `y` coordinates, and the size of the
+error bars at either of each `(x, y)` point. For symmetric error bars,
+only a vector `err` is required, such that their total size will be `2 .* err`.
+For asymmetric error bars, two vectors `errlow` and `errhigh` are required,
+such that the size of the error bars will be `errlow .+ errhigh`.
+
+The optional format string `spec` defines the style and color of the lines
+of error bars and the markers at `(x, y)`, as in
+[matplotlib](https://matplotlib.org/3.1.1/api/_as_gen/matplotlib.pyplot.plot.html).
+If no `specs` are given, the error bars will be plotted as solid lines with a
+predefined sequence of colors, without markers.
+
+Additionally, the following keyword arguments can be used to modify the aspect
+of the error bars:
+
+* `linewidth::Float64`: line width scale factor.
+* `markersize::Float64`: marker size scale factor.
+* `horizontal::Bool`: set it to `true` to draw horizontal error bars).
+* `capwidth`: fixed value of the width of the bar "caps", in units of
+    the X axis (or Y axis if `horizontal` is `true`). If it is not given,
+    the cap width will be automatically adjusted to 0.3 times the mean
+    separation between data points.
+
+# Examples
+
+```julia
+$(_example("errorbar"))
 ```
 """)
 
@@ -443,11 +531,14 @@ function of the X and Y coordinates.
 
 Multiple lines can be defined by triplets of `x`, `y` and `z` coordinates (and
 optionally their format strings), passed sequentially as arguments of `plot3`.
-Alternatively, if various lines have the same X and Y coordinates, their Y values can
-be grouped as columns in a matrix.
 
 If no `specs` are given, the series will be plotted as solid lines with a
 predefined sequence of colors.
+
+Additionally, specifications of lines and markers can be defined by keyword arguments:
+
+* `linewidth`: line width scale factor.
+* `markersize`: marker size scale factor.
 
 # Examples
 
@@ -929,7 +1020,7 @@ adjusted by the keyword argument `xform` --- a number or a string from the
 following table:
 
 | # |String       |description                  |
-|:-:|-------------|-----------------------------|
+|:-:|:------------|:----------------------------|
 | 0 |`"boolean"`  |boolean                      |
 | 1 |`"linear"`   |linear                       |
 | 2 |`"log"`      |logarithmic                  |
@@ -971,7 +1062,7 @@ The method to reduce volume data can be defined by the keyword argument
 following table:
 
 | # |String        |description                 |
-|:-:|--------------|----------------------------|
+|:-:|:-------------|:---------------------------|
 | 0 |`"emission"`  |emission model (default)    |
 | 1 |`"absorption"`|absorption model            |
 | 2 |`"mip"`       |maximum intensity projection|

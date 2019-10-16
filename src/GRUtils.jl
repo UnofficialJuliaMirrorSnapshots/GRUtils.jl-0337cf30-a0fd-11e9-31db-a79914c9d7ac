@@ -4,7 +4,7 @@ import GR
 
 export Figure, gcf, subplot, currentplot, draw, savefig,
     plot, plot3, polar, scatter, scatter3, stair, stem, oplot,
-    barplot, histogram, polarhistogram,
+    errorbar, barplot, histogram, polarhistogram,
     contour, contourf, shade, surface, tricont, trisurf, volume, wireframe,
     heatmap, polarheatmap, hexbin, imshow, isosurface,
     aspectratio, colorbar, grid, hold, legend, radians,
@@ -14,7 +14,7 @@ export Figure, gcf, subplot, currentplot, draw, savefig,
     zflip, zlabel, zlim, zlog, zticks,
 
     subplot!, plot!, plot3!, polar!, scatter!, scatter3!, stair!, stem!, oplot!,
-    barplot!, histogram!, polarhistogram!,
+    errorbar!, barplot!, histogram!, polarhistogram!,
     contour!, contourf!, shade!, surface!, tricont!, trisurf!, volume!, wireframe!,
     heatmap!, polarheatmap!, hexbin!, imshow!, isosurface!,
     aspectratio!, colorbar!, grid!, hold!, legend!, title!,
@@ -74,9 +74,11 @@ const CURRENTFIGURE = Ref(EMPTYFIGURE)
 
 """
     gcf()
+    gcf(fig::Figure)
 
-Get the global current figure.
+Get the global current figure, or set it to be `fig`.
 """
 gcf() = (CURRENTFIGURE[] == EMPTYFIGURE) ? Figure() : CURRENTFIGURE[]
+gcf(fig::Figure) = (CURRENTFIGURE[] = fig)
 
 end # module
