@@ -1,5 +1,6 @@
 ## Select keyword arguments from lists
-const KEYS_GEOM_ATTRIBUTES = [:accelerate, :algorithm, :alpha, :baseline, :clabels, :horizontal, :label, :linewidth, :markersize, :shadelines, :spec, :stair_position, :xform]
+const KEYS_GEOM_ATTRIBUTES = [:accelerate, :algorithm, :alpha, :baseline, :clabels, :color,
+    :horizontal, :label, :linecolor, :linewidth, :markercolor, :markersize, :shadelines, :spec, :stair_position, :xform]
 const KEYS_PLOT_ATTRIBUTES = [:backgroundcolor, :colorbar, :colormap, :location, :hold, :overlay_axes, :radians, :ratio, :scheme, :subplot, :title,
     :xflip, :xlabel, :xlim, :xlog, :xticklabels, :yflip, :ylabel, :ylim, :ylog, :yticklabels, :zflip, :zlabel, :zlim, :zlog]
 
@@ -127,6 +128,8 @@ Additionally, specifications of lines and markers can be defined by keyword argu
 
 * `linewidth`: line width scale factor.
 * `markersize`: marker size scale factor.
+* `linecolor`: hexadecimal RGB color code for the line.
+* `markercolor`: hexadecimal RGB color code for the markers.
 
 This function can receive a single numeric vector or matrix, which will be
 interpreted as the Y coordinates; in such case the X coordinates will be a
@@ -271,6 +274,7 @@ of the error bars:
 
 * `linewidth::Float64`: line width scale factor.
 * `markersize::Float64`: marker size scale factor.
+* `linecolor`: hexadecimal RGB color code for the line.
 * `horizontal::Bool`: set it to `true` to draw horizontal error bars).
 * `capwidth`: fixed value of the width of the bar "caps", in units of
     the X axis (or Y axis if `horizontal` is `true`). If it is not given,
@@ -342,7 +346,7 @@ docstring="""
 Draw a scatter plot.
 
 Points are defined by their `x` and `y` coordinates, given as numeric vectors.
-Additionally, values for markers' `size` and `color` can be provided
+Additionally, values for markers' `size` and `color` can be provided.
 Size values will determine the marker size in percent of the regular size,
 and color values will be used in combination with the current colormap.
 
@@ -375,7 +379,55 @@ function barcoordinates(heights; barwidth=0.8, baseline=0.0, kwargs...)
     (wc, hc)
 end
 
-function _setargs_bar(f, labels, heights; horizontal=false, kwargs...)
+function barcoordinates(heights::AbstractMatrix; barposition="grouped", kwargs...)
+    if barposition == "grouped"
+        groupedbars(heights; kwargs...)
+    elseif barposition == "stacked"
+        stackedbars(heights; kwargs...)
+    else
+        throw(ArgumentError("""`barposition` must be `"grouped"` or `"stacked"`"""))
+    end
+end
+
+# stacked bar coordinates
+function stackedbars(heights; barwidth=0.8, baseline=0.0, kwargs...)
+    n, m = size(heights)
+    halfw = barwidth/2
+    wc = zeros(2n, m)
+    hc  = zeros(2n, m)
+    bases = repeat([baseline], n)
+    for c=1:m, r=1:n
+        value = heights[r, c]
+        wc[2r-1, c] = r - halfw
+        wc[2r, c]   = r + halfw
+        hc[2r-1, c] = bases[r]
+        hc[2r, c]   = bases[r] + value
+        bases[r] = hc[2r, c]
+    end
+    (wc, hc)
+end
+
+# grouped bar coordinates
+function groupedbars(heights; barwidth=0.8, baseline=0.0, kwargs...)
+    n, m = size(heights)
+    halfw = barwidth/2m
+    wc = zeros(2n, m)
+    hc  = zeros(2n, m)
+    for c=1:m, r=1:n
+        value = heights[r, c]
+        offset = (2c - 1 - m) * halfw
+        wc[2r-1, c] = r - halfw + offset
+        wc[2r, c]   = r + halfw + offset
+        hc[2r-1, c] = baseline
+        hc[2r, c]   = value
+    end
+    (wc, hc)
+end
+
+function _setargs_bar(f, labels, heights; fillcolor=nothing, horizontal=false, kwargs...)
+    if fillcolor ≠ nothing # deprecate?
+        kwargs = (; color=fillcolor, kwargs...)
+    end
     wc, hc = barcoordinates(heights; kwargs...)
     if horizontal
         args = (hc, wc)
@@ -401,12 +453,22 @@ Draw a bar plot.
 If no specific labels are given, the bars are labelled with integer
 numbers starting from 1.
 
-Use the keyword arguments `barwidth`, `baseline` or `horizontal`
-to modify the aspect of the bars, which by default is:
+If `heights` is a matrix, each column is taken as a different set of data,
+which are represented as bars of different colors.
+Use the keyword argument `barposition` with the values `"grouped"` (default)
+or `"stacked"` to control if the bars are positioned side by side or
+stacked on top of the previous series.
+
+The keyword arguments `barwidth`, `baseline` and `horizontal`
+can also be used to modify the aspect of the bars, which by default is:
 
 * `barwidth = 0.8` (80% of the separation between bars).
 * `baseline = 0.0` (bars starting at zero).
 * `horizontal = false` (vertical bars)
+
+The color of the bars is selected automatically, unless
+a specific hexadecimal RGB color code is given through
+the keyword argument `color`.
 
 # Examples
 
@@ -439,7 +501,10 @@ function hist(x, nbins=0, baseline=0.0)
     (wc, hc)
 end
 
-function _setargs_hist(f, x; nbins = 0, horizontal = false, kwargs...)
+function _setargs_hist(f, x; nbins = 0, fillcolor=nothing, horizontal = false, kwargs...)
+    if fillcolor ≠ nothing # deprecate?
+        kwargs = (; color=fillcolor, kwargs...)
+    end
     # Define baseline - 0.0 by default, unless using log scale
     if get(kwargs, :ylog, false) || horizontal && get(kwargs, :xlog, false)
         baseline = 1.0
@@ -463,6 +528,7 @@ The following keyword arguments can be supplied:
     the number of bins is computed as `3.3 * log10(n) + 1`,  with `n` being the
     number of elements in `data`.
 * `horizontal`: whether the histogram should be horizontal (`false` by default).
+* `color`: hexadecimal RGB color code for the bars.
 
 !!! note
 
@@ -502,6 +568,7 @@ The following keyword arguments can be supplied:
     grid are presented as factors of π.
 * `fullcircle`: Set this argument to `true` to scale the angular coordinates of
     the histogram and make the bars span over the whole circle.
+* `color`: hexadecimal RGB color code for the bars.
 
 !!! note
 
@@ -539,6 +606,8 @@ Additionally, specifications of lines and markers can be defined by keyword argu
 
 * `linewidth`: line width scale factor.
 * `markersize`: marker size scale factor.
+* `linecolor`: hexadecimal RGB color code for the line.
+* `markercolor`: hexadecimal RGB color code for the markers.
 
 # Examples
 
@@ -796,6 +865,9 @@ a wireframe plot. It can receive one of the following:
 - *M* sorted values of the `x` axis, *N* sorted values of the `y` axis,
     and a callable to determine `z` values.
 
+Also use the attributes `color` and `linecolor` to set the color of the
+surface and lines of the mesh, as RGB hexadecimal color values.
+ 
 If a series of points is passed to this function, their values will be
 interpolated on a grid. For grid points outside the convex hull of the
 provided points, a value of 0 will be used.
@@ -889,41 +961,13 @@ $(_example("hexbin"))
 ```
 """)
 
-# Needs to be extended
-function colormap()
-    rgb = zeros(256, 3)
-    for colorind in 1:256
-        color = GR.inqcolor(999 + colorind)
-        rgb[colorind, 1] = float( color        & 0xff) / 255.0
-        rgb[colorind, 2] = float((color >> 8)  & 0xff) / 255.0
-        rgb[colorind, 3] = float((color >> 16) & 0xff) / 255.0
-    end
-    rgb
-end
-
-"""
-    to_rgba(value, cmap)
-
-Transform a normalized value into a color index given by the colormap `cmap`.
-"""
-function to_rgba(value, cmap)
-    if !isnan(value)
-        r, g, b = cmap[round(Int, value * 255 + 1), :]
-        a = 1.0
-    else
-        r, g, b, a = zeros(4)
-    end
-    round(UInt32, a * 255) << 24 + round(UInt32, b * 255) << 16 +
-    round(UInt32, g * 255) << 8  + round(UInt32, r * 255)
-end
-
 function _setargs_imshow(f, data; kwargs...)
     if isa(data, AbstractString)
         w, h, rgbdata = GR.readimage(data)
     else
         h, w = size(data)
-        cmap = colormap()
-        rgbdata = [to_rgba(value, cmap) for value ∈ transpose(data)]
+        GR.setcolormap(get(kwargs, :colormap, COLOR_INDICES[:colormap]))
+        rgbdata = [to_rgba(value) for value ∈ transpose(data)]
     end
     if get(kwargs, :xflip, false)
         rgbdata = reverse(rgbdata, dims=2)
@@ -952,12 +996,15 @@ $(_example("imshow"))
 ```
 """)
 
-function _setargs_isosurf(f, v, isovalue; color = [0.0, 0.5, 0.8], kwargs...)
+function _setargs_isosurf(f, v, isovalue; skincolor=nothing, kwargs...)
+    if skincolor ≠ nothing # deprecate?
+        kwargs = (; color=skincolor, kwargs...)
+    end
     values = round.((v .- _min(v)) ./ (_max(v) .- _min(v)) .* (2^16-1))
     dimensions = float.(collect(size(v)))
     isoval_norm = (isovalue - _min(v)) / (_max(v) - _min(v))
     # x = dimensions, y = isovalue, z = values, c = color
-    ((dimensions, [isoval_norm], values[:], collect(color)), kwargs)
+    ((dimensions, [isoval_norm], values[:]), kwargs)
 end
 
 @plotfunction(isosurface, geom = :isosurf, axes = :axes3d, setargs = _setargs_isosurf,
@@ -972,7 +1019,7 @@ considered to be outside the surface, and the values lower than `isovalue` are
 inside the surface.
 
 The color of the isosurface can be chosen with the keyword argument
-`color = (r, g, b)`, with the red, green and blue values (between 0 and 1).
+`color`, with the hexadecimal RGB color code.
 
 # Examples
 
@@ -981,7 +1028,10 @@ $(_example("isosurface"))
 ```
 """)
 
-const XFORMS = ["boolean", "linear", "log", "loglog", "cubic", "equalized"]
+const XFORMS = Dict(
+    "boolean"=>0, "linear"=>1, "log"=>2,
+    "loglog"=>3, "cubic"=>4, "equalized"=>5
+)
 
 function _setargs_shade(f, x, y; kwargs...)
     # Determine type of footprint
@@ -996,7 +1046,7 @@ function _setargs_shade(f, x, y; kwargs...)
     end
     # Transformation
     if haskey(kwargs, :xform)
-        xf = _index(kwargs[:xform], XFORMS, 0)
+        xf = lookup(kwargs[:xform], XFORMS)
         kwargs = (; kwargs..., xform=float(xf))
     end
     return ((x, y), kwargs)
@@ -1035,13 +1085,13 @@ $(_example("shade"))
 ```
 """)
 
-const ALGORITHMS = ["emission", "absorption", "mip"]
+const ALGORITHMS = Dict("emission"=>0, "absorption"=>1, "mip"=>2)
 
 function _setargs_volume(f, v::Array{T, 3}; kwargs...) where {T}
     (nx, ny, nz) = size(v)
     # Algorithm
     if haskey(kwargs, :algorithm)
-        alg = _index(kwargs[:algorithm], ALGORITHMS, 0)
+        alg = lookup(kwargs[:algorithm], ALGORITHMS)
         kwargs = (; kwargs..., algorithm=float(alg))
     end
     (([nx], [ny], [nz], vec(v)), kwargs)
