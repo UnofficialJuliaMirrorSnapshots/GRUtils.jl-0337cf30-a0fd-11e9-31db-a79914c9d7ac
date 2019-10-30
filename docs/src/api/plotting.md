@@ -78,6 +78,21 @@ barplot
 Figure(); # hide
 Base.include(GRUtils, "../examples/docstrings/barplot.jl") # hide
 ```
+## Vector fields
+```@docs
+quiver
+```
+```@example plot
+Figure(); # hide
+Base.include(GRUtils, "../examples/docstrings/quiver.jl") # hide
+```
+```@docs
+quiver3
+```
+```@example plot
+Figure(); # hide
+Base.include(GRUtils, "../examples/docstrings/quiver3.jl") # hide
+```
 ## Histograms
 ```@docs
 histogram
@@ -182,4 +197,12 @@ isosurface
 ```@example plot
 Figure(); # hide
 Base.include(GRUtils, "../examples/docstrings/isosurface.jl") # hide
+```
+## Text
+```@docs
+annotations
+```
+```@example plot
+Figure(); # hide
+Base.include(GRUtils, "../examples/docstrings/annotations.jl") # hide
 ```
