@@ -70,7 +70,7 @@ legend("a", "b")
 function legend(args::AbstractString...; kwargs...)
     f = gcf()
     legend!(currentplot(f), args...; kwargs...)
-    draw(f)
+    return f
 end
 
 # Hold
@@ -123,7 +123,7 @@ title("")
 function title(s::AbstractString)
     f = gcf()
     title!(currentplot(f), s)
-    draw(f)
+    return f
 end
 
 const AXISLABEL_DOC = """
@@ -262,7 +262,7 @@ for ax = ("x", "y", "z")
     @eval @doc AXISLABEL_DOC function $fname(s::AbstractString)
         f = gcf()
         $fname!(currentplot(f), s)
-        draw(f)
+        return f
     end
 
     # xticks, etc.
@@ -280,7 +280,7 @@ for ax = ("x", "y", "z")
     @eval @doc TICKS_DOC function $fname(args...)
         f = gcf()
         $fname!(currentplot(f), args...)
-        draw(f)
+        return f
     end
 
     # xlim, etc.
@@ -315,7 +315,7 @@ for ax = ("x", "y", "z")
     @eval @doc AXISLIM_DOC function $fname(args...)
         f = gcf()
         $fname!(currentplot(f), args...)
-        draw(f)
+        return f
     end
 
     # xlog, xflip, etc.
@@ -333,7 +333,7 @@ for ax = ("x", "y", "z")
         @eval @doc $docstr function $fname(args...)
             f = gcf()
             $fname!(currentplot(f), args...)
-            draw(f)
+            return f
         end
     end
 end
@@ -373,7 +373,7 @@ for ax = ("x", "y")
     @eval @doc TICKLABELS_DOC function $fname(s)
         f = gcf()
         $fname!(currentplot(f), s)
-        draw(f)
+        return f
     end
 end
 
@@ -396,7 +396,7 @@ set the grid during the creation of plots.
 function grid(flag)
     f = gcf()
     grid!(currentplot(f), flag)
-    draw(f)
+    return f
 end
 
 # Colorbar
@@ -428,7 +428,7 @@ enable or disable the color bar during the creation of plots.
 function colorbar(flag)
     f = gcf()
     colorbar!(currentplot(f), flag)
-    draw(f)
+    return f
 end
 
 # Aspect ratio
@@ -457,7 +457,7 @@ $(_example("aspectratio"))
 function aspectratio(r)
     f = gcf()
     aspectratio!(currentplot(f), r)
-    draw(f)
+    return f
 end
 
 # Radians in polar axes
@@ -501,7 +501,7 @@ radians(false)
 function radians(flag)
     f = gcf()
     radians!(currentplot(f), flag)
-    draw(f)
+    return f
 end
 
 # Pan and zoom
@@ -545,16 +545,37 @@ panzoom(1, 0.2, 0.5)
 function panzoom(args...)
     f = gcf()
     panzoom!(currentplot(f), args...)
-    draw(f)
+    return f
 end
 
+# zoom for axes2d and axes3d with gr3
+zoom2d!(p, r) = panzoom!(p, 0.0, 0.0, r)
+
+function zoomgr3!(p::PlotObject, r)
+    p.axes.camera[1:3] ./= r
+    return nothing
+end
+
+function zoom!(p::PlotObject, r)
+    if p.axes.kind == :axes2d
+        zoom2d!(p, r)
+    elseif get(p.axes.options, :gr3, 0) ≠ 0
+        zoomgr3!(p, r)
+    end
+end
+
+zoom!(f::Figure, r) = zoom!(currentplot(f), r)
+
 """
-    zoom(s)
+    zoom(r)
 
-Zoom the current axes to the ratio indicated by `s`.
+Zoom the plot by the ratio indicated by `r`.
 
-The "zoomed" axes are centered around the same point,
-but proportionally resized to `s` times the original size.
+In two-dimensional plots, the "zoomed" axes are centered around the same point,
+but proportionally resized to `r` times the original size.
+
+In three-dimensional scenes defined with "camera" settings
+(e.g. in [`isosurface`](@ref) plots), the camera distance is divided by `r`.
 
 # Examples
 
@@ -563,8 +584,182 @@ but proportionally resized to `s` times the original size.
 zoom(0.5)
 ```
 """
-zoom(r) = panzoom(0.0, 0.0, r)
-zoom!(pf, r) = panzoom!(pf, 0.0, 0.0, r)
+function zoom(r)
+    f = gcf()
+    zoom!(currentplot(f), r)
+    return f
+end
+
+# 3-D perspectives
+
+function viewpoint!(p::PlotObject, rotation, tilt)
+    p.axes.perspective .= [rotation, tilt]
+    if get(p.axes.options, :gr3, 0) ≠ 0
+        distance = norm(view(p.axes.camera, 1:3))
+        p.axes.camera .= set_camera(distance, rotation, tilt)
+    end
+    return nothing
+end
+
+viewpoint!(f::Figure, rotation, tilt) = viewpoint!(currentplot(f), rotation, tilt)
+
+"""
+    viewpoint(rotation, tilt)
+
+Set the viewpoint of three-dimensional plots.
+
+`rotation` and `tilt` must be integer values that indicate the
+"azimuth" and "elevation" angles of the line of sight (in degrees).
+
+If both angles are zero, the plot is viewed in the direction of the Y axis
+(i.e. the X-Z plane is seen). Positive `rotation` values mean a
+counterclockwise rotation of the line of sight (or a clockwise rotation of the scene)
+around the vertical (Z) axis. Positive `tilt` values mean an ascension
+of the view point.
+
+# Examples
+
+```julia
+# Reset the view to the X-Y plane
+# (rotation=0, tilt=90)
+viewpoint(0, 90)
+```
+"""
+function viewpoint(rotation, tilt)
+    f = gcf()
+    viewpoint!(currentplot(f), rotation, tilt)
+    return f
+end
+
+function rotate!(p::PlotObject, angle)
+    p.axes.perspective[1] += angle
+    if get(p.axes.options, :gr3, 0) ≠ 0
+        _rotate!(view(p.axes.camera, 1:3), angle)
+        _rotate!(view(p.axes.camera, 7:9), angle)
+    end
+    return nothing
+end
+
+rotate!(f::Figure, angle) = rotate!(currentfigure(f), angle)
+
+function tilt!(p::PlotObject, angle)
+    p.axes.perspective[2] += angle
+    if get(p.axes.options, :gr3, 0) ≠ 0
+        rotation = p.axes.perspective[1]
+        camera_position = view(p.axes.camera, 1:3)
+        _rotate!(camera_position, -rotation)
+        _tilt!(camera_position, angle)
+        _rotate!(camera_position, rotation)
+        up_vector = view(p.axes.camera, 7:9)
+        _rotate!(up_vector, -rotation)
+        _tilt!(up_vector, angle)
+        _rotate!(up_vector, rotation)
+    end
+    return nothing
+end
+
+tilt!(f::Figure, angle) = tilt!(currentfigure(f), angle)
+
+"""
+    rotate(angle::Int)
+
+Rotate the viewpoint of the current plot
+by `angle` degrees around the vertical axis of the scene,
+with respect to its current position.
+
+# Examples
+
+```julia
+# Rotate 10 degrees to the right
+rotate(10)
+```
+"""
+function rotate(angle)
+    f = gcf()
+    rotate!(currentplot(f), angle)
+    return f
+end
+
+"""
+    tilt(angle::Int)
+
+Tilt (elevate) the viewpoint of the current plot
+by `angle` degrees over the horizontal plane,
+with respect to its current position.
+
+# Examples
+
+```julia
+# Tilt 10 degrees up
+tilt(10)
+```
+"""
+function tilt(angle)
+    f = gcf()
+    tilt!(currentplot(f), angle)
+    return f
+end
+
+# Only for 3-D scenes with gr3
+
+movefocus!(p::PlotObject, target) = _focus!(p.axes.camera, target)
+movefocus!(f::Figure, target) = movefocus!(currentplot(f), target)
+
+"""
+    movefocus(target)
+
+Rotate the camera view axis, moving the focus to the `target` point.
+
+This only affects 3-D scenes created with camera settings, e.g.
+[`isosurface`](@ref) plots. Moving the focus point rotates the camera
+without changing its position; in order to rotate the camera around
+the center of the scene, use the functions
+[`rotate`](@ref), [`tilt`](@ref) or [`viewpoint`](@ref).
+
+# Examples
+
+```julia
+# Move the focus to the point (1.0, 0.5, 0.0)
+movefocus([1.0, 0.5, 0.0])
+```
+"""
+function movefocus(target)
+    f = gcf()
+    movefocus!(currentplot(f), target)
+    return f
+end
+
+function turncamera!(p::PlotObject, angle)
+    params = p.axes.camera
+    # Rotate up vector towards right vector around axis
+    axis = normalize([params[4]-params[1], params[5]-params[2], params[6]-params[3]])
+    up_vector = params[7:9]
+    right_vector = axis × up_vector
+    up_vector .= cosd(angle).*up_vector .+ sind(angle).*right_vector
+    return nothing
+end
+
+turncamera!(f::Figure, angle) = turncamera!(currentplot(f), angle)
+
+"""
+    turncamera(angle)
+
+Turn the orientation of the camera by `angle` degrees
+around its view axis (only for 3-D scenes created with camera settings).
+
+# Examples
+
+```julia
+# Turn the perspective 10 degrees
+turncamera(10)
+```
+"""
+function turncamera(angle)
+    f = gcf()
+    turncamera!(currentplot(f), angle)
+    return f
+end
+
 
 """
     colormap!(p, cmap)
@@ -603,7 +798,7 @@ function colormap!(f::Figure, cmap)
     for p in f.plots
         colormap!(p, cmap)
     end
-    draw(f)
+    return f
 end
 
 
@@ -646,5 +841,5 @@ function colorscheme!(f::Figure, scheme)
     for p in f.plots
         colorscheme!(p, scheme)
     end
-    draw(f)
+    return f
 end

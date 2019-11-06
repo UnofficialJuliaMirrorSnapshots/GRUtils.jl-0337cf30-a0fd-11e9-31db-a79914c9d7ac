@@ -17,9 +17,10 @@ functionlist = (
     ("Contour plots", ("contour", "contourf", "tricont")),
     ("Surface plots", ("surface", "trisurf", "wireframe")),
     ("Volume rendering", ("volume",)),
-    ("Heatmaps", ("heatmap", "shade")),
+    ("Heatmaps", ("heatmap", "polarheatmap", "shade")),
     ("Images", ("imshow",)),
     ("Isosurfaces", ("isosurface",)),
+    ("Text", ("annotations",)),
     ("Attributes", ("aspectratio", "ticks")),
     ("Control", ("subplot",)),
     ("Colors", ("colorscheme", "colormap"))
@@ -42,4 +43,5 @@ end
 
 file_path = ENV["GKS_FILEPATH"]
 @test isfile(file_path)
+GRUtils.GR.reset()
 rm(file_path)
